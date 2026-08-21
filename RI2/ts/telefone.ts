@@ -13,7 +13,7 @@ export default class Telefone{
     setNumero(numero:string){
         this.numero = numero;
     }
-    //GETTERS
+    //LETS GET IT
     getDdd(){
         return this.ddd;
     }
