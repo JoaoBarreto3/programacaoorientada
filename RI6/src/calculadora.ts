@@ -90,6 +90,11 @@ let iniciar = () => {
                 leitor.close()
                 return
 
+            case "Jesus":
+                console.log(`Jesus Cristo é o Senhor!`)
+                leitor.close()
+                return
+
             default:
                 console.log(`Operação inválida\n`)
                 break;
