@@ -1,0 +1,18 @@
+{
+  "name": "ri6",
+  "version": "1.0.0",
+  "main": "dist/calculadora.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "tsc && node dist/calculadora.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@types/node": "^26.6.1",
+    "typescript": "^7.0.2"
+  }
+}
