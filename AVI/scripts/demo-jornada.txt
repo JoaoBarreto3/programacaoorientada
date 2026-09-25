@@ -1,0 +1,49 @@
+
+Verde#2026
+Verde#2026
+admin
+Verde#2026
+usuario criar operador --papel OPERADOR_CADASTRO
+Coleta#2026
+Coleta#2026
+usuario criar gestor --papel GESTOR_ALMOXARIFADO
+Coleta#2026
+Coleta#2026
+usuario criar auditor --papel AUDITOR
+Coleta#2026
+Coleta#2026
+sair
+operador
+Coleta#2026
+org criar --razao "Banco Horizonte S.A." --cnpj 11.222.333/0001-81 --email ti@horizonte.com.br --endereco "Av. Paulista, 1000, Sao Paulo/SP" --vencimento 2027-12-31 --valor 4500 --clausulas "Coleta mensal; Laudo de destinacao"
+org criar --razao "Hospital Vida" --cnpj 12.ABC.345/01DE-35 --email ti@vida.org.br --endereco "Rua das Flores, 50, Recife/PE" --vencimento 2027-06-30 --valor 2800 --clausulas "Coleta trimestral" --renovacao-auto
+org listar
+sair
+gestor
+Coleta#2026
+lote criar --org BR001 --nf 123456 --transp TransRapida
+equip adicionar --lote LT-2026-0001 --tipo NOTEBOOK --marca Dell --modelo "Latitude 5490" --ano 2019 --estado BOM_ESTADO --peso 1.9
+equip adicionar --lote LT-2026-0001 --tipo MONITOR --marca LG --modelo 24MK430 --ano 2018 --estado USADO_LEVE --peso 3.4
+equip status EQ-000001 AGUARDANDO_DESMONTE
+lote triagem LT-2026-0001
+equip estado EQ-000001 --estado USADO_LEVE
+equip estado EQ-000002 --estado DANIFICADO_GRAVE
+equip estado EQ-000002 --estado DANIFICADO_GRAVE --justificativa "Painel quebrado e vazamento de cristal liquido"
+lote triagem LT-2026-0001
+equip mover EQ-000001 --destino "Galpao B / Bancada 3"
+equip status EQ-000001 AGUARDANDO_DESMONTE
+equip mover EQ-000001 --destino "Linha de desmonte 1"
+equip status EQ-000001 EM_DESMONTE
+equip status EQ-000001 MATERIAL_RECICLAVEL
+equip status EQ-000002 DESCARTE_SEGURO
+sair
+auditor
+Coleta#2026
+equip rastrear EQ-000001
+relatorio triagem LT-2026-0001
+relatorio organizacao BR001
+relatorio financeiro
+journal listar --limite 15
+journal verificar
+lote criar --org BR001 --nf 999 --transp X
+encerrar

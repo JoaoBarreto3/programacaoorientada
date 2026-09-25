@@ -1,0 +1,9 @@
+enum StatusLote {
+    RECEBIDO = "RECEBIDO",
+    EM_TRIAGEM = "EM_TRIAGEM",
+    TRIAGEM_CONCLUIDA = "TRIAGEM_CONCLUIDA",
+    ENCAMINHADO = "ENCAMINHADO",
+    FINALIZADO = "FINALIZADO"
+}
+
+export default StatusLote;
