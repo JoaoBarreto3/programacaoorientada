@@ -175,7 +175,7 @@ npm run test:unidade     # só os testes que não precisam de banco
 npm run test:interface   # só os testes da interface no navegador
 ```
 
-São **114 testes** em 24 suítes:
+São **128 testes** em 25 suítes:
 
 | Grupo | Arquivos | O que cobre |
 |---|---|---|
@@ -185,6 +185,7 @@ São **114 testes** em 24 suítes:
 | Segurança | `autenticacao`, `usuarios-permissoes` | JWT, expiração por inatividade, logout, bloqueio, matriz de permissões dos 4 papéis |
 | Validação | `validacao-entrada` | 29 entradas malformadas recusadas com 400, campos controlados pelo servidor, JSON malformado, limite de tamanho |
 | Concorrência e banco | `concorrencia-integridade` | versionamento otimista, requisições simultâneas, triggers e CHECK com SQL direto |
+| Casos-limite | `casos-limite` | corridas entre requisições no mesmo lote (triagem × inclusão, baixas simultâneas), paginação extrema, tokens forjados, valores fora do limite |
 | Seed | `seed` | o script de seed roda de verdade, cobre os cenários de validação e não duplica dados |
 | Documentação | `documentacao` | toda rota documentada no OpenAPI, protegida por token e com o CRUD de cada entidade |
 | Jornada | `tests/jornada.test.ts` | servidor real em outro processo: do provisionamento à rastreabilidade, com reinício e graceful shutdown |

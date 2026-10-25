@@ -27,7 +27,11 @@ export default class ServicoEquipamento {
         return equipamento;
     }
 
-    private async carregarLote(repos: Repositorios, equipamento: Equipamento): Promise<Lote> {
+    // "bloquear" trava o lote até o fim da transação (ver RepositorioLote.bloquear).
+    private async carregarLote(repos: Repositorios, equipamento: Equipamento, bloquear = false): Promise<Lote> {
+        if (bloquear) {
+            await repos.lotes.bloquear(equipamento.loteId);
+        }
         const lote = await repos.lotes.buscar(equipamento.loteId);
         if (!lote) {
             throw new ErroIntegridade(`Lote ${equipamento.loteId} do equipamento ${equipamento.id} não encontrado.`);
@@ -101,7 +105,7 @@ export default class ServicoEquipamento {
         await this.uow.executar(async repos => {
             const equipamento = await this.carregar(repos, id);
             equipamento.verificarVersao(versao);
-            const lote = await this.carregarLote(repos, equipamento);
+            const lote = await this.carregarLote(repos, equipamento, true);
             const reposicionados = lote.removerEquipamento(equipamento.id);
             await repos.equipamentos.excluir(equipamento);
             for (const e of reposicionados) {
@@ -133,7 +137,7 @@ export default class ServicoEquipamento {
         return this.uow.executar(async repos => {
             const equipamento = await this.carregar(repos, id);
             equipamento.verificarVersao(versao);
-            const lote = await this.carregarLote(repos, equipamento);
+            const lote = await this.carregarLote(repos, equipamento, true);
             const anterior = equipamento.statusRastreamento;
             const statusLoteAnterior = lote.statusProcessamento;
             lote.atualizarStatusEquipamento(equipamento, novoStatus, justificativa, autenticado.login, this.relogio.agora());

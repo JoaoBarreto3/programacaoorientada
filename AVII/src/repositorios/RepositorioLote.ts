@@ -44,6 +44,15 @@ export default class RepositorioLote {
         return linha ? loteParaDominio(linha) : null;
     }
 
+    // Trava a linha do lote até o fim da transação (SELECT ... FOR UPDATE). Operações que mudam a
+    // composição ou a situação do lote passam a ser executadas uma de cada vez: a segunda espera a
+    // primeira terminar e então lê o lote já atualizado. Sem isso, duas requisições simultâneas
+    // podiam ler o mesmo estado antigo (ex.: a última baixa definitiva não finalizava o lote, ou
+    // um equipamento entrava no lote enquanto a triagem começava e ficava fora dela).
+    public async bloquear(id: string): Promise<void> {
+        await this.db.$queryRaw`SELECT id FROM lotes WHERE id = ${id.trim().toUpperCase()} FOR UPDATE`;
+    }
+
     public async listar(filtro: FiltroLote, paginacao: ParametrosPaginacao) {
         const { pular, tamanhoPagina, pagina } = normalizarPaginacao(paginacao);
         const where = filtroParaWhere(filtro);

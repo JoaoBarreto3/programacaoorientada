@@ -42,7 +42,7 @@ export function pagina(ref: string) {
 }
 
 export const queryPaginacao = {
-    pagina: { type: "integer", minimum: 1, default: 1 },
+    pagina: { type: "integer", minimum: 1, maximum: 1000000, default: 1 },
     tamanhoPagina: { type: "integer", minimum: 1, maximum: 100, default: 20 }
 } as const;
 

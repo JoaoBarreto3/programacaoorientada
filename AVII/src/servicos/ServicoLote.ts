@@ -29,7 +29,11 @@ export default class ServicoLote {
         this.fabricaLote = new FabricaLote(relogio);
     }
 
-    private async carregar(repos: Repositorios, id: string): Promise<Lote> {
+    // "bloquear" trava o lote até o fim da transação (ver RepositorioLote.bloquear).
+    private async carregar(repos: Repositorios, id: string, bloquear = false): Promise<Lote> {
+        if (bloquear) {
+            await repos.lotes.bloquear(id);
+        }
         const lote = await repos.lotes.buscar(id);
         if (!lote) {
             throw new ErroNaoEncontrado(`Lote "${id}" não encontrado.`);
@@ -96,7 +100,7 @@ export default class ServicoLote {
     public async adicionarEquipamentoLote(autenticado: UsuarioAutenticado, loteId: string, dados: DadosEquipamento): Promise<Equipamento> {
         exigirPermissao(autenticado, Permissao.LOTES_ESCREVER);
         return this.uow.executar(async repos => {
-            const lote = await this.carregar(repos, loteId);
+            const lote = await this.carregar(repos, loteId, true);
             const equipamento = await this.incluirEquipamento(repos, lote, dados, autenticado.login);
             await repos.auditoria.registrar({
                 operacao: "EQUIPAMENTO_ADICIONAR", entidade: "Equipamento", entidadeId: equipamento.id, usuario: autenticado.login,
@@ -128,7 +132,7 @@ export default class ServicoLote {
     public async atualizar(autenticado: UsuarioAutenticado, id: string, dados: DadosLoteEditaveis & { dataEntrada?: Date }, versao: number): Promise<Lote> {
         exigirPermissao(autenticado, Permissao.LOTES_ESCREVER);
         return this.uow.executar(async repos => {
-            const lote = await this.carregar(repos, id);
+            const lote = await this.carregar(repos, id, true);
             lote.verificarVersao(versao);
             const antes = lote.paraJSON(false);
             lote.alterarDados(dados, this.fabricaLote.validarDataEntrada(dados.dataEntrada ?? lote.dataEntrada));
@@ -142,7 +146,7 @@ export default class ServicoLote {
     public async excluir(autenticado: UsuarioAutenticado, id: string, versao?: number): Promise<void> {
         exigirPermissao(autenticado, Permissao.LOTES_ESCREVER);
         await this.uow.executar(async repos => {
-            const lote = await this.carregar(repos, id);
+            const lote = await this.carregar(repos, id, true);
             lote.verificarVersao(versao);
             lote.exigirExcluivel();
             await repos.lotes.excluir(lote);
@@ -154,7 +158,7 @@ export default class ServicoLote {
     public async processarTriagem(autenticado: UsuarioAutenticado, loteId: string, versao?: number): Promise<{ lote: Lote; etapa: string }> {
         exigirPermissao(autenticado, Permissao.LOTES_ESCREVER);
         return this.uow.executar(async repos => {
-            const lote = await this.carregar(repos, loteId);
+            const lote = await this.carregar(repos, loteId, true);
             lote.verificarVersao(versao);
             const statusAnterior = lote.statusProcessamento;
             const etapa = lote.avancarTriagem(autenticado.login, this.relogio.agora());
