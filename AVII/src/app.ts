@@ -65,7 +65,7 @@ export async function construirApp(opcoes: OpcoesApp): Promise<FastifyInstance> 
         resposta.header("referrer-policy", "no-referrer");
         resposta.header("access-control-expose-headers", CABECALHO_TOKEN_RENOVADO);
     });
-
+//Eu sou Darth Vader
     app.addSchema({
         $id: "Saude", type: "object",
         properties: { status: { type: "string" }, banco: { type: "string" }, versao: { type: "string" }, horario: { type: "string" } }
