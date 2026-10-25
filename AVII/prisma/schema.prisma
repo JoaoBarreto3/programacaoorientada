@@ -1,0 +1,249 @@
+// Modelo de dados do greencode (AV2).
+// Reproduz o modelo de domínio da AV1 (Organizacao, Contrato, Lote, Equipamento, Movimentacao)
+// e acrescenta Usuario, ParametrosGlobais e RegistroAuditoria, que antes viviam em arquivos cifrados.
+//
+// Convenções:
+//  - tabelas e colunas em snake_case no banco (@@map/@map); modelos e campos em camelCase no código;
+//  - "versao" em todas as entidades alteráveis: versionamento otimista (ver docs/ARQUITETURA.md);
+//  - restrições que o Prisma não expressa (CHECK, triggers) ficam na migração SQL "regras_integridade".
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "cjs"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------- enumerações
+
+enum PapelUsuario {
+  ADMINISTRADOR
+  OPERADOR_CADASTRO
+  GESTOR_ALMOXARIFADO
+  AUDITOR
+
+  @@map("papel_usuario")
+}
+
+enum StatusLote {
+  RECEBIDO
+  EM_TRIAGEM
+  TRIAGEM_CONCLUIDA
+  ENCAMINHADO
+  FINALIZADO
+
+  @@map("status_lote")
+}
+
+enum TipoEquipamento {
+  COMPUTADOR_MESA
+  NOTEBOOK
+  MONITOR
+  IMPRESSORA
+  SERVIDOR
+  ROTEADOR
+  CABO_ESTRUTURADO
+  FONTE_ALIMENTACAO
+
+  @@map("tipo_equipamento")
+}
+
+enum EstadoFisico {
+  NOVO
+  BOM_ESTADO
+  USADO_LEVE
+  USADO_MODERADO
+  DANIFICADO_LEVE
+  DANIFICADO_GRAVE
+  INSERVIVEL
+
+  @@map("estado_fisico")
+}
+
+enum StatusRastreamento {
+  AGUARDANDO_TRIAGEM
+  EM_TRIAGEM
+  AGUARDANDO_DESMONTE
+  EM_DESMONTE
+  PECAS_REAPROVEITADAS
+  MATERIAL_RECICLAVEL
+  DESCARTE_SEGURO
+  BAIXA_DEFINITIVA
+
+  @@map("status_rastreamento")
+}
+
+// Na AV1 a natureza era deduzida comparando textos; agora é uma coluna explícita.
+enum NaturezaMovimentacao {
+  LOCALIZACAO
+  STATUS
+  ESTADO_FISICO
+
+  @@map("natureza_movimentacao")
+}
+
+// ---------------------------------------------------------------- acesso
+
+model Usuario {
+  id               String       @id @default(uuid()) @db.Uuid
+  login            String       @unique @db.VarChar(32)
+  hashSenha        String       @map("hash_senha")
+  salt             String       @db.Char(32)
+  papel            PapelUsuario
+  ativo            Boolean      @default(true)
+  ultimoAcesso     DateTime?    @map("ultimo_acesso") @db.Timestamptz(3)
+  tentativasFalhas Int          @default(0) @map("tentativas_falhas")
+  bloqueadoAte     DateTime?    @map("bloqueado_ate") @db.Timestamptz(3)
+  // Incrementada no logout, na troca de senha e na desativação: invalida os JWT já emitidos.
+  versaoToken      Int          @default(0) @map("versao_token")
+  criadoEm         DateTime     @default(now()) @map("criado_em") @db.Timestamptz(3)
+  atualizadoEm     DateTime     @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+  versao           Int          @default(1)
+
+  @@map("usuarios")
+}
+
+// ---------------------------------------------------------------- cadastro
+
+model Organizacao {
+  // Código legível (BR001, BR002...) gerado pela sequência seq_organizacao.
+  id                String    @id @db.VarChar(12)
+  razaoSocial       String    @map("razao_social") @db.VarChar(150)
+  cnpj              String    @unique @db.Char(14)
+  inscricaoEstadual String    @default("ISENTO") @map("inscricao_estadual") @db.VarChar(18)
+  enderecoCompleto  String    @map("endereco_completo") @db.VarChar(300)
+  telefone          String    @default("") @db.VarChar(13)
+  email             String    @db.VarChar(150)
+  dataCadastro      DateTime  @default(now()) @map("data_cadastro") @db.Timestamptz(3)
+  ativo             Boolean   @default(true)
+  atualizadoEm      DateTime  @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+  versao            Int       @default(1)
+  contrato          Contrato?
+  lotes             Lote[]
+
+  @@index([ativo])
+  @@map("organizacoes")
+}
+
+model Contrato {
+  id                  String      @id @default(uuid()) @db.Uuid
+  // @unique garante a cardinalidade 0..1 (uma organização tem no máximo um contrato).
+  organizacaoId       String      @unique @map("organizacao_id") @db.VarChar(12)
+  organizacao         Organizacao @relation(fields: [organizacaoId], references: [id], onDelete: Cascade)
+  dataAssinatura      DateTime    @map("data_assinatura") @db.Date
+  dataVencimento      DateTime    @map("data_vencimento") @db.Date
+  // Lista de cláusulas em JSONB (dado semiestruturado).
+  clausulas           Json        @db.JsonB
+  valorMensal         Decimal     @map("valor_mensal") @db.Decimal(12, 2)
+  renovacaoAutomatica Boolean     @default(false) @map("renovacao_automatica")
+  atualizadoEm        DateTime    @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+  versao              Int         @default(1)
+
+  @@map("contratos")
+}
+
+// ---------------------------------------------------------------- almoxarifado
+
+model Lote {
+  // Código legível (LT-2026-0001) gerado pela sequência seq_lote.
+  id                  String        @id @db.VarChar(16)
+  dataEntrada         DateTime      @map("data_entrada") @db.Date
+  organizacaoId       String        @map("organizacao_id") @db.VarChar(12)
+  // Restrict: uma organização com lotes não pode ser excluída (deve ser desativada).
+  organizacao         Organizacao   @relation(fields: [organizacaoId], references: [id], onDelete: Restrict)
+  notaFiscal          String        @map("nota_fiscal") @db.VarChar(9)
+  transportadora      String        @db.VarChar(100)
+  statusProcessamento StatusLote    @default(RECEBIDO) @map("status_processamento")
+  observacoes         String        @default("") @db.VarChar(1000)
+  criadoEm            DateTime      @default(now()) @map("criado_em") @db.Timestamptz(3)
+  atualizadoEm        DateTime      @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+  versao              Int           @default(1)
+  equipamentos        Equipamento[]
+
+  // A mesma nota fiscal não pode ser registrada duas vezes para a mesma organização.
+  @@unique([organizacaoId, notaFiscal])
+  @@index([dataEntrada])
+  @@index([statusProcessamento])
+  @@map("lotes")
+}
+
+model Equipamento {
+  // Código legível (EQ-000001) gerado pela sequência seq_equipamento.
+  id                  String             @id @db.VarChar(12)
+  codigoBarrasInterno String             @unique @map("codigo_barras_interno") @db.VarChar(13)
+  tipo                TipoEquipamento
+  marca               String             @db.VarChar(60)
+  modelo              String             @db.VarChar(80)
+  anoFabricacao       Int                @map("ano_fabricacao")
+  estadoFisico        EstadoFisico       @map("estado_fisico")
+  pesoQuilogramas     Decimal            @map("peso_quilogramas") @db.Decimal(8, 3)
+  loteId              String             @map("lote_id") @db.VarChar(16)
+  // Cascade: só ocorre ao excluir um lote RECEBIDO (regra garantida pelo serviço e por trigger).
+  lote                Lote               @relation(fields: [loteId], references: [id], onDelete: Cascade)
+  posicaoNoLote       Int                @map("posicao_no_lote")
+  statusRastreamento  StatusRastreamento @default(AGUARDANDO_TRIAGEM) @map("status_rastreamento")
+  criadoEm            DateTime           @default(now()) @map("criado_em") @db.Timestamptz(3)
+  atualizadoEm        DateTime           @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+  versao              Int                @default(1)
+  movimentacoes       Movimentacao[]
+
+  @@unique([loteId, posicaoNoLote])
+  @@index([statusRastreamento])
+  @@index([tipo])
+  @@map("equipamentos")
+}
+
+model Movimentacao {
+  id            String               @id @default(uuid()) @db.Uuid
+  equipamentoId String               @map("equipamento_id") @db.VarChar(12)
+  equipamento   Equipamento          @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
+  natureza      NaturezaMovimentacao
+  dataHora      DateTime             @default(now()) @map("data_hora") @db.Timestamptz(3)
+  origem        String               @db.VarChar(120)
+  destino       String               @db.VarChar(120)
+  responsavel   String               @db.VarChar(32)
+  observacao    String               @default("") @db.VarChar(1000)
+
+  @@index([equipamentoId, dataHora])
+  @@map("movimentacoes")
+}
+
+// ---------------------------------------------------------------- configuração e auditoria
+
+model ParametrosGlobais {
+  id                      String   @id @default("globais") @db.VarChar(16)
+  // Ex.: { "ISS": 0.05, "PIS": 0.0165, "COFINS": 0.076 }
+  aliquotas               Json     @db.JsonB
+  // Por TipoEquipamento: fração de depreciação anual.
+  coeficientesDepreciacao Json     @map("coeficientes_depreciacao") @db.JsonB
+  // Por TipoEquipamento: valor de referência de um equipamento novo (R$).
+  valoresReferencia       Json     @map("valores_referencia") @db.JsonB
+  retencaoAuditoriaDias   Int      @default(180) @map("retencao_auditoria_dias")
+  atualizadoEm            DateTime @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+  versao                  Int      @default(1)
+
+  @@map("parametros_globais")
+}
+
+// Sucessor do journal da AV1: cada operação de escrita grava aqui, na mesma transação,
+// o estado antes e depois. A tabela é somente-inclusão (trigger bloqueia UPDATE e DELETE
+// de registros dentro do prazo de retenção).
+model RegistroAuditoria {
+  id          String   @id @default(uuid()) @db.Uuid
+  dataHora    DateTime @default(now()) @map("data_hora") @db.Timestamptz(3)
+  operacao    String   @db.VarChar(40)
+  entidade    String   @db.VarChar(30)
+  entidadeId  String   @map("entidade_id") @db.VarChar(40)
+  usuario     String   @db.VarChar(32)
+  dadosAntes  Json?    @map("dados_antes") @db.JsonB
+  dadosDepois Json?    @map("dados_depois") @db.JsonB
+
+  @@index([entidade, entidadeId])
+  @@index([dataHora])
+  @@index([usuario])
+  @@map("registros_auditoria")
+}

@@ -1,0 +1,5 @@
+# Quebras de linha LF em todos os sistemas: o Prisma confere o checksum das migrações SQL,
+# e a conversão automática para CRLF no Windows o alteraria.
+* text=auto eol=lf
+*.png binary
+*.ico binary

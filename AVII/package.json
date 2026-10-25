@@ -1,0 +1,50 @@
+{
+  "name": "greencode-api",
+  "version": "2.0.0",
+  "private": true,
+  "description": "greencode - API REST monolítica de logística reversa de resíduos eletrônicos (AV2)",
+  "main": "dist/src/server.js",
+  "scripts": {
+    "configurar": "node scripts/configurar.mjs",
+    "postinstall": "prisma generate",
+    "build": "prisma generate && tsc",
+    "start": "node dist/src/server.js",
+    "dev": "tsc && node dist/src/server.js",
+    "db:migrar": "prisma migrate deploy",
+    "db:seed": "tsc && prisma db seed",
+    "db:resetar": "tsc && prisma migrate reset --force && prisma db seed",
+    "test": "tsc && node scripts/preparar-banco-teste.mjs && node --test --test-concurrency=1 dist/tests/",
+    "test:unidade": "tsc && node --test dist/tests/unidade/",
+    "test:interface": "tsc && node scripts/preparar-banco-teste.mjs && node --test dist/tests/interface/"
+  },
+  "engines": {
+    "node": ">=20.19"
+  },
+  "keywords": [
+    "logistica-reversa",
+    "api",
+    "fastify",
+    "prisma",
+    "residuos-eletronicos"
+  ],
+  "author": "JoaoBarreto3",
+  "license": "ISC",
+  "dependencies": {
+    "@fastify/jwt": "^10.2.5",
+    "@fastify/static": "^10.1.7",
+    "@fastify/swagger": "^9.9.2",
+    "@fastify/swagger-ui": "^6.1.2",
+    "@prisma/adapter-pg": "^7.10.1",
+    "@prisma/client": "^7.10.1",
+    "dotenv": "^18.0.9",
+    "fastify": "^5.12.7",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "@types/pg": "^8.23.1",
+    "playwright-core": "^1.48.2",
+    "prisma": "^7.10.1",
+    "typescript": "^7.0.2"
+  }
+}

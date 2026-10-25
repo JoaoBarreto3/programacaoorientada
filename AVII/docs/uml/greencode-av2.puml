@@ -1,0 +1,209 @@
+@startuml greencode-av2
+' Diagrama de classes da AV2 (servidor monolítico em camadas Controller → Service → Repository).
+' Gere a imagem com: java -jar plantuml.jar docs/uml/greencode-av2.puml (ou pela extensão PlantUML do VS Code).
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+hide empty members
+
+package "http (Fastify)" {
+  class ControllerAutenticacao
+  class ControllerUsuario
+  class ControllerOrganizacao
+  class ControllerLote
+  class ControllerEquipamento
+  class ControllerAdministracao
+  class "autenticacao (hook JWT)" as HookJwt
+  class "tratamentoErros" as TratamentoErros
+}
+
+package "servicos (regras de negócio + autorização)" {
+  class Servicos <<raiz de composição>>
+  class ServicoAutenticacao {
+    provisionar(login, senha): Sessao
+    login(login, senha): Sessao
+    validarSessao(token): UsuarioAutenticado
+    renovar(usuario): Sessao
+    logout(usuario): void
+    alterarSenha(usuario, atual, nova): Sessao
+  }
+  interface EmissorToken {
+    emitir(conteudo): token
+  }
+  class ServicoUsuario
+  class ServicoOrganizacao {
+    cadastrarOrganizacao(u, dados): Organizacao
+    buscarOrganizacao(u, id): Organizacao
+    listar(u, filtro, pagina): Pagina
+    atualizar(u, id, dados, versao)
+    alterarSituacao(u, id, ativo)
+    excluir(u, id, versao)
+    definirContrato(u, id, dados)
+    renovarContrato(u, id, vencimento)
+    excluirContrato(u, id)
+  }
+  class ServicoLote {
+    criarLote(u, dados): Lote
+    adicionarEquipamentoLote(u, loteId, dados)
+    processarTriagem(u, loteId)
+    consultarLotePorPeriodo(u, inicio, fim)
+    atualizar(u, id, dados, versao)
+    excluir(u, id, versao)
+  }
+  class ServicoEquipamento {
+    rastrearEquipamento(u, id): HistoricoCompleto
+    atualizarEstadoFisico(u, id, estado, justificativa)
+    atualizarStatus(u, id, status, justificativa)
+    registrarMovimentacao(u, id, destino)
+    gerarCodigoBarras(tipo, sequencia): string
+    atualizarDados(u, id, dados, versao)
+    excluir(u, id, versao)
+  }
+  class ServicoParametros
+  class ServicoRelatorio
+  class ServicoAuditoria
+}
+
+package "repositorios (Prisma Client)" {
+  class UnidadeDeTrabalho {
+    leitura: Repositorios
+    executar(operacao): Promise   ' prisma.$transaction
+  }
+  class Repositorios
+  class RepositorioUsuario
+  class RepositorioOrganizacao
+  class RepositorioLote
+  class RepositorioEquipamento
+  class RepositorioParametros
+  class RepositorioAuditoria
+  class GeradorCodigos <<sequências do PostgreSQL>>
+}
+
+package "dominio" {
+  abstract class EntidadeVersionada {
+    versao: number
+    verificarVersao(esperada)
+  }
+  interface Autenticavel {
+    autenticar(usuario, senha): Promise<boolean>
+  }
+  class Usuario {
+    login, hashSenha, salt, papel, ativo
+    tentativasFalhas, bloqueadoAte, versaoToken
+    verificarSenha(senha)
+    registrarFalhaLogin(agora)
+    invalidarTokens()
+  }
+  class Sessao {
+    token, usuario, papel, criacao, expiracao
+    isValida(agora)
+  }
+  class Organizacao {
+    id, razaoSocial, cnpj, inscricaoEstadual
+    enderecoCompleto, telefone, email, ativo
+    alterarEndereco(), desativar(), reativar()
+    exigirAptaParaColeta(hoje)
+  }
+  class Contrato {
+    dataAssinatura, dataVencimento
+    clausulas: string[], valorMensal, renovacaoAutomatica
+    estaVigente(hoje), renovar(vencimento, hoje)
+  }
+  class Lote <<raiz do agregado>> {
+    id, dataEntrada, notaFiscal, transportadora
+    statusProcessamento: StatusLote
+    adicionarEquipamento(), removerEquipamento()
+    avancarTriagem(), atualizarStatusEquipamento()
+    calcularPesoTotal(), gerarRelatorioTriagem()
+  }
+  class Equipamento {
+    id, codigoBarrasInterno, tipo, marca, modelo
+    anoFabricacao, estadoFisico, pesoQuilogramas
+    posicaoNoLote, statusRastreamento
+    atualizarStatus(), atualizarEstadoFisico()
+    registrarMovimentacao(), calcularDepreciacao()
+  }
+  class Movimentacao {
+    natureza: NaturezaMovimentacao
+    dataHora, origem, destino, responsavel, observacao
+  }
+  class ParametrosGlobais
+  abstract class Validador <<abstract>> {
+    validar(objeto): boolean
+    obterMensagemErro(): string
+  }
+  class ValidadorCNPJ
+  class ValidadorDataEntrada
+  class ValidadorSenha
+  class ValidadorUsuario
+  class ValidadorEmail
+  class ValidadorNotaFiscal
+}
+
+package "fabricas" {
+  class FabricaOrganizacao
+  class FabricaLote
+  class FabricaEquipamento
+  class FabricaUsuario
+}
+
+' ---- camadas
+ControllerAutenticacao --> ServicoAutenticacao
+ControllerUsuario --> ServicoUsuario
+ControllerOrganizacao --> ServicoOrganizacao
+ControllerLote --> ServicoLote
+ControllerEquipamento --> ServicoEquipamento
+ControllerAdministracao --> ServicoParametros
+ControllerAdministracao --> ServicoRelatorio
+ControllerAdministracao --> ServicoAuditoria
+HookJwt --> ServicoAutenticacao : validarSessao
+ServicoAutenticacao --> EmissorToken
+Servicos *-- ServicoAutenticacao
+Servicos *-- ServicoOrganizacao
+Servicos *-- ServicoLote
+Servicos *-- ServicoEquipamento
+Servicos *-- UnidadeDeTrabalho
+
+ServicoOrganizacao --> UnidadeDeTrabalho
+ServicoLote --> UnidadeDeTrabalho
+ServicoEquipamento --> UnidadeDeTrabalho
+ServicoUsuario --> UnidadeDeTrabalho
+ServicoParametros --> UnidadeDeTrabalho
+ServicoRelatorio --> UnidadeDeTrabalho
+ServicoAuditoria --> UnidadeDeTrabalho
+UnidadeDeTrabalho --> Repositorios
+Repositorios *-- RepositorioUsuario
+Repositorios *-- RepositorioOrganizacao
+Repositorios *-- RepositorioLote
+Repositorios *-- RepositorioEquipamento
+Repositorios *-- RepositorioParametros
+Repositorios *-- RepositorioAuditoria
+Repositorios *-- GeradorCodigos
+
+ServicoOrganizacao ..> FabricaOrganizacao : cria via
+ServicoLote ..> FabricaLote : cria via
+ServicoLote ..> FabricaEquipamento : cria via
+ServicoUsuario ..> FabricaUsuario : cria via
+FabricaOrganizacao --> ValidadorCNPJ
+FabricaLote --> ValidadorDataEntrada
+
+' ---- domínio (relacionamentos pedidos na AV2)
+EntidadeVersionada <|-- Usuario
+EntidadeVersionada <|-- Organizacao
+EntidadeVersionada <|-- Contrato
+EntidadeVersionada <|-- Lote
+EntidadeVersionada <|-- Equipamento
+EntidadeVersionada <|-- ParametrosGlobais
+Usuario ..|> Autenticavel
+Validador <|-- ValidadorCNPJ
+Validador <|-- ValidadorDataEntrada
+Validador <|-- ValidadorSenha
+Validador <|-- ValidadorUsuario
+Validador <|-- ValidadorEmail
+Validador <|-- ValidadorNotaFiscal
+Usuario "1" --> "0..*" Sessao : gera >
+Organizacao "1" -- "0..1" Contrato : possui >
+Organizacao "1" -- "0..*" Lote : gera >
+Lote "1" *-- "0..*" Equipamento : contém >
+Equipamento "1" *-- "0..*" Movimentacao : registra >
+Equipamento ..> ParametrosGlobais : depreciação
+@enduml
