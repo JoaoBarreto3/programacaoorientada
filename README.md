@@ -34,10 +34,9 @@ Não há dependências nativas (nada para compilar): o driver do PostgreSQL e o 
 com o usuário `greencode` (senha `greencode`), que é o que o `.env` padrão usa.
 
 **Opção B (PostgreSQL instalado):** crie uma vez o usuário que o `.env` padrão usa (os bancos são criados pelo
-`npm run configurar`):
+`npm run configurar`). Abra o `psql` (Windows: `psql -U postgres` · Ubuntu: `sudo -u postgres psql`) e execute:
 
-```bash
-# Windows: psql -U postgres          Ubuntu: sudo -u postgres psql
+```sql
 CREATE USER greencode WITH PASSWORD 'greencode' CREATEDB;
 ```
 
@@ -50,12 +49,19 @@ Os comandos são os mesmos no Windows (PowerShell ou Prompt de Comando) e no Lin
 ```bash
 git clone -b AVII https://github.com/JoaoBarreto3/programacaoorientada.git
 cd programacaoorientada/AVII
-docker compose up -d   # só na opção A (Docker): sobe o PostgreSQL
-npm install            # dependências + geração do Prisma Client
-npm run configurar     # cria o .env (com segredo JWT aleatório), os bancos e aplica as migrações
-npm run db:seed        # opcional: dados de exemplo (rode ANTES de abrir o site; veja abaixo)
-npm run dev            # compila e inicia o servidor
+docker compose up -d
+npm install
+npm run configurar
+npm run db:seed
+npm run dev
 ```
+
+O que cada comando faz:
+- `docker compose up -d`: sobe o PostgreSQL. **Só na opção A (Docker)**; na opção B, pule esta linha.
+- `npm install`: instala as dependências e gera o Prisma Client.
+- `npm run configurar`: cria o `.env` (com segredo JWT aleatório), os bancos e aplica as migrações.
+- `npm run db:seed`: **opcional**, carrega os dados de exemplo. Rode **antes** de abrir o site (veja abaixo).
+- `npm run dev`: compila e inicia o servidor.
 
 Abra `http://localhost:3000`:
 - **Com o seed:** entre com `admin`, `operador`, `gestor` ou `auditor`, todos com a senha `Greencode2026`.
@@ -190,11 +196,11 @@ EM_TRIAGEM e a segunda conclui a triagem do lote, liberando o desmonte. O banco 
 
 ## Testes
 
-```bash
-npm test                 # tudo (unidade + integração + jornada + interface)
-npm run test:unidade     # só os testes que não precisam de banco
-npm run test:interface   # só os testes da interface no navegador
-```
+| Comando | O que roda |
+|---|---|
+| `npm test` | tudo (unidade + integração + jornada + interface) |
+| `npm run test:unidade` | só os testes que não precisam de banco |
+| `npm run test:interface` | só os testes da interface no navegador |
 
 São **129 testes** em 25 suítes:
 
