@@ -49,13 +49,30 @@ git clone -b AVII https://github.com/JoaoBarreto3/programacaoorientada.git
 cd programacaoorientada/AVII
 npm install            # dependências + geração do Prisma Client
 npm run configurar     # cria o .env (com segredo JWT aleatório), os bancos e aplica as migrações
-npm run db:seed        # opcional: dados de exemplo
+npm run db:seed        # opcional: dados de exemplo (rode ANTES de abrir o site; veja abaixo)
 npm run dev            # compila e inicia o servidor
 ```
 
 Abra `http://localhost:3000`:
 - **Com o seed:** entre com `admin`, `operador`, `gestor` ou `auditor`, todos com a senha `Greencode2026`.
 - **Sem o seed:** a primeira tela é o **provisionamento inicial** (cria o primeiro administrador), como na AV1.
+
+#### Como rodar com o seed (a ordem importa)
+
+O seed só funciona com o banco **vazio**: se já existir qualquer usuário, ele é ignorado e mostra
+`O banco já possui usuários: seed ignorado`. Por isso, siga esta ordem:
+
+1. `npm install`
+2. `npm run configurar`
+3. `npm run db:seed`, **antes** de abrir o site e antes de criar o administrador pela tela de provisionamento
+4. `npm run dev`
+5. Abra `http://localhost:3000` e entre com `admin` / `Greencode2026`
+
+Se você já abriu o site e criou um administrador pela tela, o seed não roda mais. Nesse caso, use
+`npm run db:resetar`: ele **apaga todos os dados**, recria o banco e já roda o seed.
+
+Rode os comandos sempre dentro da pasta `AVII` que você vai usar: o seed grava no banco indicado pelo
+`DATABASE_URL` do `.env` dessa pasta.
 
 O `npm run configurar` pode ser repetido sem problema: ele mantém o que já existe. Se algo der errado (PostgreSQL
 parado, senha errada), ele diz o que fazer. Para produção: `npm run build` e depois `npm start`. O servidor
