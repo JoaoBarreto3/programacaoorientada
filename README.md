@@ -1,11 +1,14 @@
 # greencode: API REST (AV2)
 
 Servidor HTTP monolítico do greencode, plataforma de logística reversa de resíduos eletrônicos.
-Evolução da CLI da AV1 (`../AVI`): **Node.js + TypeScript + Fastify + Prisma ORM + PostgreSQL**, autenticação
+Evolução da CLI da AV1 (pasta `AVI` na branch `master`): **Node.js + TypeScript + Fastify + Prisma ORM + PostgreSQL**, autenticação
 **JWT**, arquitetura em camadas **Controller → Service → Repository**, CRUD completo e front-end SPA.
 
-- Decisões de arquitetura, trade-offs, segurança, cenários de falha e revisão da AV1: [docs/ARQUITETURA.md](docs/ARQUITETURA.md)
-- Diagrama de classes (PlantUML): [docs/uml/greencode-av2.puml](docs/uml/greencode-av2.puml)
+Todo o código fica na pasta [`AVII/`](AVII). Os comandos e caminhos citados neste README (`src/`, `tests/`, `prisma/`…)
+são relativos a essa pasta.
+
+- Decisões de arquitetura, trade-offs, segurança, cenários de falha e revisão da AV1: [docs/ARQUITETURA.md](AVII/docs/ARQUITETURA.md)
+- Diagrama de classes (PlantUML): [docs/uml/greencode-av2.puml](AVII/docs/uml/greencode-av2.puml)
 - Documentação interativa da API (OpenAPI/Swagger): `http://localhost:3000/docs` com o servidor no ar
 
 ## Requisitos
@@ -27,7 +30,7 @@ Não há dependências nativas (nada para compilar): o driver do PostgreSQL e o 
 | Windows 10/11 | `winget install OpenJS.NodeJS.LTS` | **A)** Docker Desktop · **B)** `winget install PostgreSQL.PostgreSQL.16` |
 | Ubuntu 24.04+ / derivados | `nvm install 22` ([nvm](https://github.com/nvm-sh/nvm)) ou [NodeSource](https://github.com/nodesource/distributions). O pacote `nodejs` do apt é a versão 18, antiga demais | **A)** Docker (`sudo apt install docker.io docker-compose-v2`) · **B)** `sudo apt install postgresql` |
 
-**Opção A (Docker, mais simples):** dentro da pasta do projeto, `docker compose up -d` sobe o PostgreSQL 16 na porta 5432
+**Opção A (Docker, mais simples):** depois de clonar (passo 2), dentro da pasta `AVII`, `docker compose up -d` sobe o PostgreSQL 16 na porta 5432
 com o usuário `greencode` (senha `greencode`), que é o que o `.env` padrão usa.
 
 **Opção B (PostgreSQL instalado):** crie uma vez o usuário que o `.env` padrão usa (os bancos são criados pelo
@@ -47,6 +50,7 @@ Os comandos são os mesmos no Windows (PowerShell ou Prompt de Comando) e no Lin
 ```bash
 git clone -b AVII https://github.com/JoaoBarreto3/programacaoorientada.git
 cd programacaoorientada/AVII
+docker compose up -d   # só na opção A (Docker): sobe o PostgreSQL
 npm install            # dependências + geração do Prisma Client
 npm run configurar     # cria o .env (com segredo JWT aleatório), os bancos e aplica as migrações
 npm run db:seed        # opcional: dados de exemplo (rode ANTES de abrir o site; veja abaixo)
@@ -192,7 +196,7 @@ npm run test:unidade     # só os testes que não precisam de banco
 npm run test:interface   # só os testes da interface no navegador
 ```
 
-São **128 testes** em 25 suítes:
+São **129 testes** em 25 suítes:
 
 | Grupo | Arquivos | O que cobre |
 |---|---|---|
