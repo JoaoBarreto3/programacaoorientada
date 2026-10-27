@@ -16,7 +16,7 @@ são relativos a essa pasta.
 | | Versão |
 |---|---|
 | Sistema | Windows 10 ou superior, Ubuntu 24.04.3 ou superior, ou derivados do Ubuntu (Mint, Pop!\_OS, Zorin…) |
-| Node.js | **20.19 ou superior** (exigência do Prisma 7 e do Fastify 5). Testado com o 20.20 |
+| Node.js | **20.19 ou superior** (exigência do Prisma 7 e do Fastify 5). Testado com o 20.20 e o 24.18 |
 | PostgreSQL | 14 ou superior (testado com o 16), local ou via Docker |
 
 Não há dependências nativas (nada para compilar): o driver do PostgreSQL e o Prisma 7 são JavaScript/WebAssembly.

@@ -13,9 +13,9 @@
     "db:migrar": "prisma migrate deploy",
     "db:seed": "tsc && prisma db seed",
     "db:resetar": "tsc && prisma migrate reset --force && prisma db seed",
-    "test": "tsc && node scripts/preparar-banco-teste.mjs && node --test --test-concurrency=1 dist/tests/",
-    "test:unidade": "tsc && node --test dist/tests/unidade/",
-    "test:interface": "tsc && node scripts/preparar-banco-teste.mjs && node --test dist/tests/interface/"
+    "test": "tsc && node scripts/preparar-banco-teste.mjs && node scripts/rodar-testes.mjs --test-concurrency=1 dist/tests/",
+    "test:unidade": "tsc && node scripts/rodar-testes.mjs dist/tests/unidade/",
+    "test:interface": "tsc && node scripts/preparar-banco-teste.mjs && node scripts/rodar-testes.mjs dist/tests/interface/"
   },
   "engines": {
     "node": ">=20.19"
