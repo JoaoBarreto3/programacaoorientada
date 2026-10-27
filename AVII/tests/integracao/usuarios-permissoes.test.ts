@@ -33,6 +33,26 @@ describe("Usuários (CRUD) e segregação de funções", () => {
         assert.equal((await amb.admin.get("/api/usuarios/joana")).status, 404);
     });
 
+    it("renomeia o login sem derrubar a sessão nem perder a senha", async () => {
+        await amb.admin.post("/api/usuarios", { login: "carla", senha: SENHA_PADRAO, papel: "AUDITOR" });
+        const carla = await amb.api.login("carla", SENHA_PADRAO);
+
+        assert.equal((await amb.admin.patch("/api/usuarios/carla", { login: "Carla!", versao: 1 })).status, 400);
+        assert.equal((await amb.admin.patch("/api/usuarios/carla", { login: "auditor", versao: 1 })).status, 422);
+
+        const renomeado = await amb.admin.patch("/api/usuarios/carla", { login: "carla.souza", versao: 1 });
+        assert.equal(renomeado.status, 200);
+        assert.equal(renomeado.corpo.login, "carla.souza");
+        assert.equal(renomeado.corpo.versao, 2);
+        assert.equal((await amb.admin.get("/api/usuarios/carla")).status, 404);
+        assert.equal((await amb.admin.get("/api/usuarios/carla.souza")).status, 200);
+
+        assert.equal((await carla.get("/api/auth/eu")).corpo.login, "carla.souza", "a sessão aberta continua valendo");
+        assert.equal((await amb.api.post("/api/auth/login", { login: "carla", senha: SENHA_PADRAO })).status, 401);
+        assert.equal((await amb.api.post("/api/auth/login", { login: "carla.souza", senha: SENHA_PADRAO })).status, 200);
+        assert.equal((await amb.admin.delete("/api/usuarios/carla.souza?versao=2")).status, 204);
+    });
+
     it("protege o último administrador e a própria conta", async () => {
         assert.equal((await amb.admin.delete("/api/usuarios/admin")).status, 422);
         assert.equal((await amb.admin.patch("/api/usuarios/admin", { ativo: false, versao: 1 })).status, 422);

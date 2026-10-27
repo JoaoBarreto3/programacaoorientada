@@ -40,12 +40,14 @@ export default class ControllerUsuario {
             return res.status(201).header("location", urlDoRecurso(req, usuario.login)).send(usuario.paraJSON());
         });
 
-        app.patch<{ Params: { login: string }; Body: { papel?: PapelUsuario; ativo?: boolean; versao: number } }>("/:login", {
+        app.patch<{ Params: { login: string }; Body: { login?: string; papel?: PapelUsuario; ativo?: boolean; versao: number } }>("/:login", {
             schema: {
-                ...base, summary: "Altera o papel e/ou ativa/desativa a conta", params: paramLogin,
+                ...base, summary: "Altera o login, o papel e/ou ativa/desativa a conta", params: paramLogin,
                 body: {
                     type: "object", required: ["versao"], additionalProperties: false,
-                    properties: { papel: enumDe(PapelUsuario), ativo: { type: "boolean" }, versao: entradas.versao }
+                    properties: {
+                        login: { type: "string", maxLength: 32 }, papel: enumDe(PapelUsuario), ativo: { type: "boolean" }, versao: entradas.versao
+                    }
                 },
                 response: { 200: { $ref: "Usuario#" }, ...errosPadrao }
             }

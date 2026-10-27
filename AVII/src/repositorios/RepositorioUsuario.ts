@@ -49,7 +49,7 @@ export default class RepositorioUsuario {
         const r = await this.db.usuario.updateMany({
             where: { id: u.id, versao: u.versao },
             data: {
-                hashSenha: u.hashSenha, salt: u.salt, papel: u.papel, ativo: u.ativo, versaoToken: u.versaoToken,
+                login: u.login, hashSenha: u.hashSenha, salt: u.salt, papel: u.papel, ativo: u.ativo, versaoToken: u.versaoToken,
                 tentativasFalhas: u.tentativasFalhas, bloqueadoAte: u.bloqueadoAte, ultimoAcesso: u.ultimoAcesso,
                 versao: proximaVersao()
             }

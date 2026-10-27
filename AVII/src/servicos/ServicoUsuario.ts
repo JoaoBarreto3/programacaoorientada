@@ -4,6 +4,7 @@ import PapelUsuario from "../dominio/enums/PapelUsuario";
 import Permissao from "../dominio/enums/Permissao";
 import FabricaUsuario from "../fabricas/FabricaUsuario";
 import ValidadorSenha from "../validacao/ValidadorSenha";
+import ValidadorUsuario from "../validacao/ValidadorUsuario";
 import { exigirValido } from "../validacao/Validador";
 import Repositorios from "../repositorios/Repositorios";
 import UnidadeDeTrabalho from "../repositorios/UnidadeDeTrabalho";
@@ -12,6 +13,7 @@ import { ErroNaoEncontrado, ErroRegraNegocio } from "../comum/erros";
 import { exigirPermissao } from "./autorizacao";
 
 export interface AlteracaoUsuario {
+    login?: string;
     papel?: PapelUsuario;
     ativo?: boolean;
 }
@@ -71,10 +73,20 @@ export default class ServicoUsuario {
         if (login === autenticado.login && (alteracao.ativo === false || (alteracao.papel && alteracao.papel !== autenticado.papel))) {
             throw new ErroRegraNegocio("Você não pode desativar a própria conta nem alterar o próprio papel.");
         }
+        const novoLogin = alteracao.login === undefined ? undefined : alteracao.login.trim();
+        if (novoLogin !== undefined) {
+            exigirValido(new ValidadorUsuario(), novoLogin);
+        }
         return this.uow.executar(async repos => {
             const usuario = await this.carregar(repos, login);
             usuario.verificarVersao(versao);
             const antes = usuario.paraJSON();
+            if (novoLogin !== undefined && novoLogin !== usuario.login) {
+                if (await repos.usuarios.buscarPorLogin(novoLogin)) {
+                    throw new ErroRegraNegocio(`O usuário "${novoLogin}" já existe.`);
+                }
+                usuario.renomear(novoLogin);
+            }
             const rebaixa = alteracao.papel !== undefined && alteracao.papel !== PapelUsuario.ADMINISTRADOR;
             if (rebaixa || alteracao.ativo === false) {
                 await this.exigirOutroAdministrador(repos, usuario);

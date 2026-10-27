@@ -44,6 +44,9 @@ body {
     color: var(--texto);
 }
 
+/* O atributo hidden precisa vencer regras como "header { display: flex }". */
+[hidden] { display: none !important; }
+
 /* ---------------------------------------------------------------- topo e menu */
 header {
     display: flex;

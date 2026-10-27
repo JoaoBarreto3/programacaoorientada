@@ -86,6 +86,8 @@ class ErroApi extends Error {
         super(erro?.mensagem ?? `Falha na requisição (HTTP ${status}).`);
         this.status = status;
         this.severidade = erro?.severidade ?? "ERRO";
+        // true quando o 401 encerrou a sessão (o aviso já foi dado); um login recusado continua false.
+        this.sessaoEncerrada = false;
     }
 }
 
@@ -104,10 +106,12 @@ async function api(metodo, rota, corpo) {
     const texto = await resposta.text();
     const dados = texto ? JSON.parse(texto) : null;
     if (!resposta.ok) {
+        const erro = new ErroApi(resposta.status, dados?.erro);
         if (resposta.status === 401 && estado.token && !rota.startsWith("/auth/login")) {
             encerrarSessao(dados?.erro?.mensagem ?? "Sessão expirada.");
+            erro.sessaoEncerrada = true;
         }
-        throw new ErroApi(resposta.status, dados?.erro);
+        throw erro;
     }
     return dados;
 }
@@ -118,7 +122,7 @@ function tratar(funcao) {
         try {
             await funcao(evento);
         } catch (erro) {
-            if (erro instanceof ErroApi && erro.status === 401) return;
+            if (erro instanceof ErroApi && erro.sessaoEncerrada) return;
             avisar(erro.message, erro.severidade ?? "ERRO");
             if (erro.status === 409) avisar("Os dados foram alterados por outra pessoa. A tela foi recarregada.", "AVISO");
             if (erro.status === 409) await renderizar();
@@ -156,7 +160,7 @@ function abrirDialogo(titulo, camposHtml, aoConfirmar, textoBotao = "Salvar", cl
             dialogo.close();
             await renderizar();
         } catch (erro) {
-            if (!(erro instanceof ErroApi && erro.status === 401)) avisar(erro.message, erro.severidade ?? "ERRO");
+            if (!(erro instanceof ErroApi && erro.sessaoEncerrada)) avisar(erro.message, erro.severidade ?? "ERRO");
             if (erro.status === 409) { dialogo.close(); await renderizar(); }
         } finally {
             botao.disabled = false;
@@ -678,7 +682,8 @@ async function telaUsuarios() {
             td(`<strong>${esc(u.login)}</strong>`), td(rotulo(u.papel)),
             td(u.ativo ? (u.bloqueadoAte && new Date(u.bloqueadoAte) > new Date() ? '<span class="etiqueta alerta">Bloqueado</span>' : '<span class="etiqueta ok">Ativo</span>') : '<span class="etiqueta ruim">Inativo</span>'),
             td(fmtDataHora(u.ultimoAcesso)),
-            td(`<div class="acoes" data-login="${esc(u.login)}"><button class="botao secundario pequeno" data-acao="papel">Papel</button>
+            td(`<div class="acoes" data-login="${esc(u.login)}"><button class="botao secundario pequeno" data-acao="renomear">Renomear</button>
+                <button class="botao secundario pequeno" data-acao="papel">Papel</button>
                 <button class="botao secundario pequeno" data-acao="situacao">${u.ativo ? "Desativar" : "Ativar"}</button>
                 <button class="botao secundario pequeno" data-acao="senha">Redefinir senha</button>
                 <button class="botao perigo pequeno" data-acao="excluir">Excluir</button></div>`)
@@ -693,6 +698,12 @@ async function telaUsuarios() {
     conteudo.querySelectorAll("[data-acao]").forEach(botao => botao.onclick = tratar(async () => {
         const u = usuarios.find(x => x.login === botao.closest("[data-login]").dataset.login);
         const acao = botao.dataset.acao;
+        if (acao === "renomear") abrirDialogo(`Renomear ${u.login}`, `<label>Novo login <input name="login" required value="${esc(u.login)}"
+                pattern="[a-z][a-z0-9._\\-]{2,31}" title="3 a 32 caracteres minúsculos, começando por letra"></label>`, async f => {
+            const alterado = await api("PATCH", `/usuarios/${u.login}`, { login: f.login.value.trim(), versao: u.versao });
+            if (u.login === estado.usuario.login) await carregarUsuario();
+            avisar(`Usuário renomeado para ${alterado.login}.`);
+        });
         if (acao === "papel") abrirDialogo(`Papel de ${u.login}`, `<label>Papel <select name="papel">${opcoes(ENUMS.papel, u.papel)}</select></label>`, async f => {
             await api("PATCH", `/usuarios/${u.login}`, { papel: f.papel.value, versao: u.versao });
             avisar("Papel alterado; as sessões do usuário foram encerradas.");
@@ -894,7 +905,7 @@ async function renderizar() {
         const [m, tela] = rota;
         await tela(...m.slice(1).map(decodeURIComponent));
     } catch (erro) {
-        if (erro instanceof ErroApi && erro.status === 401) return;
+        if (erro instanceof ErroApi && erro.sessaoEncerrada) return;
         conteudo.innerHTML = `<h1>Não foi possível carregar</h1><p class="subtitulo">${esc(erro.message)}</p><p><a href="#/painel">Voltar ao painel</a></p>`;
     }
 }

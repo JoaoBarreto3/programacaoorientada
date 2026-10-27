@@ -88,6 +88,11 @@ export default class Usuario extends EntidadeVersionada implements Autenticavel 
         this.versaoToken++;
     }
 
+    // A sessão é validada pelo id do usuário, então trocar o login não encerra as sessões abertas.
+    public renomear(novoLogin: string): void {
+        this.login = novoLogin;
+    }
+
     public alterarPapel(papel: PapelUsuario): void {
         if (papel !== this.papel) {
             this.papel = papel;
