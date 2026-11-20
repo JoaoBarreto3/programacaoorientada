@@ -5,20 +5,20 @@
   "description": "greencode - plataforma de logística reversa de resíduos eletrônicos: API interna, API pública, camada analítica e fila de relatórios (AV3)",
   "main": "dist/src/server.js",
   "scripts": {
-    "configurar": "node scripts/configurar.mjs",
+    "configurar": "tsc && node scripts/configurar.mjs",
     "postinstall": "prisma generate",
     "build": "prisma generate && tsc",
     "start": "node dist/src/server.js",
     "worker": "node dist/src/worker.js",
-    "dev": "tsc && node dist/src/server.js",
-    "dev:worker": "tsc && node dist/src/worker.js",
+    "dev": "tsc && node scripts/configurar.mjs --silencioso && node dist/src/server.js",
+    "dev:worker": "tsc && node scripts/configurar.mjs --silencioso && node dist/src/worker.js",
     "db:migrar": "prisma migrate deploy",
     "db:seed": "tsc && prisma db seed",
     "db:resetar": "tsc && prisma migrate reset --force && prisma db seed",
-    "test": "tsc && node scripts/preparar-banco-teste.mjs && node scripts/rodar-testes.mjs --test-concurrency=1 dist/tests/",
-    "test:requisitos": "tsc && node scripts/preparar-banco-teste.mjs && node scripts/rodar-testes.mjs dist/tests/requisitos/",
+    "test": "tsc && node scripts/configurar.mjs --silencioso && node scripts/preparar-banco-teste.mjs && node scripts/rodar-testes.mjs --test-concurrency=1 dist/tests/",
+    "test:requisitos": "tsc && node scripts/configurar.mjs --silencioso && node scripts/preparar-banco-teste.mjs && node scripts/rodar-testes.mjs dist/tests/requisitos/",
     "test:unidade": "tsc && node scripts/rodar-testes.mjs dist/tests/unidade/",
-    "test:interface": "tsc && node scripts/preparar-banco-teste.mjs && node scripts/rodar-testes.mjs dist/tests/interface/"
+    "test:interface": "tsc && node scripts/configurar.mjs --silencioso && node scripts/preparar-banco-teste.mjs && node scripts/rodar-testes.mjs dist/tests/interface/"
   },
   "engines": {
     "node": ">=20.19"

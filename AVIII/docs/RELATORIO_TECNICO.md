@@ -347,8 +347,10 @@ justifica quando uma dessas partes precisar escalar ou evoluir num ritmo muito d
   `msgpackr-extract`, um acelerador **opcional** usado pelo BullMQ: vem pré-compilado para Windows e
   Linux e, se não puder ser instalado, o BullMQ usa a versão em JavaScript. Um teste de requisitos
   confere no `package-lock.json` que nenhuma dependência obrigatória tem etapa nativa.
-- **Redis:** `docker compose up -d` sobe PostgreSQL e Redis no Windows (Docker Desktop) e no Linux. No
-  Ubuntu também há o pacote `redis-server`. Sem Redis, o sistema funciona com a fila em memória.
+- **Instalação em um comando:** depois do `npm install`, o `npm run dev` (via `scripts/configurar.mjs`) cria o
+  `.env`, sobe PostgreSQL e Redis pelo Docker (Docker Desktop no Windows) nas portas 55432/56379, troca para uma
+  porta livre se outro programa já ocupar a configurada, aplica as migrações e carrega o seed com o banco vazio.
+  Sem Docker, basta apontar `DATABASE_URL` para um PostgreSQL local; sem Redis, a fila roda em memória.
 - **Sinais:** o worker trata SIGINT, SIGTERM e SIGBREAK (Ctrl+Break no Windows) e espera os jobs em
   andamento terminarem (graceful shutdown).
 - **Fusos e datas:** agendamentos com fuso explícito (`FUSO_AGENDAMENTOS`); datas civis em UTC, como

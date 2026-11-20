@@ -27,33 +27,42 @@ Documentos:
 |---|---|
 | Sistema | Windows 10 ou superior, Ubuntu 24.04.3 ou superior, ou derivados do Ubuntu |
 | Node.js | **20.19 ou superior** (testado com o 20.20) |
-| PostgreSQL | 14 ou superior (testado com o 16) |
+| Docker | **recomendado** (Docker Desktop no Windows): sobe PostgreSQL e Redis sozinho, sem instalar nada além |
+| PostgreSQL | 14 ou superior (testado com o 16), pelo Docker ou instalado na máquina |
 | Redis | 6.2 ou superior (testado com o 7). **Opcional** em desenvolvimento: sem ele a fila roda em memória |
 
-Nada precisa ser compilado (a única peça nativa, um acelerador opcional do BullMQ, vem pré-compilada e tem alternativa em JavaScript). O `docker-compose.yml` sobe o PostgreSQL e o Redis.
+Nada precisa ser compilado (a única peça nativa, um acelerador opcional do BullMQ, vem pré-compilada e tem alternativa em JavaScript). 
 
 ## Instalação (Windows ou Linux)
 
 ```bash
 git clone -b AVIII https://github.com/JoaoBarreto3/programacaoorientada.git
 cd programacaoorientada/AVIII
-docker compose up -d      # PostgreSQL + Redis (ou instale os dois e ajuste o .env)
 npm install
-npm run configurar        # cria o .env, os bancos e aplica as migrações
-npm run db:seed           # opcional: dados de exemplo com 12 meses de histórico
 npm run dev               # http://localhost:3000
 ```
 
-Se o `docker compose up -d` reclamar de porta em uso (já existe um PostgreSQL ou Redis instalado na máquina), defina
-`POSTGRES_PORTA=55432` e `REDIS_PORTA=56379` no `.env`, troque as portas em `DATABASE_URL`, `DATABASE_URL_TESTE`,
-`REDIS_URL` e `REDIS_URL_TESTE` para os mesmos valores e rode `docker compose up -d` de novo.
+Só isso. Com o Docker aberto (Docker Desktop no Windows), o primeiro `npm run dev` faz tudo sozinho:
 
-Sem Docker no Windows: instale o PostgreSQL (`winget install PostgreSQL.PostgreSQL.16`) e deixe `REDIS_URL` vazio
-no `.env`. O sistema funciona com a fila em memória, adequada para uso local com uma única instância.
+1. cria o `.env` a partir do `.env.example`, com um segredo JWT aleatório;
+2. sobe o PostgreSQL e o Redis do `docker-compose.yml`, nas portas **55432** e **56379**, para não colidir com um
+   PostgreSQL ou Redis já instalado na máquina. Se mesmo assim a porta estiver ocupada por outro programa, ele
+   escolhe uma livre e atualiza o `.env`;
+3. cria os bancos, aplica as migrações e, com o banco vazio, **carrega os dados de exemplo** (12 meses de histórico).
+
+Nas próximas vezes ele só confere que está tudo de pé e inicia o servidor. `npm test` faz a mesma preparação
+antes dos testes. Para apagar tudo e recarregar os dados de exemplo: `npm run db:resetar`.
+
+Sem Docker: instale o PostgreSQL (no Windows, `winget install PostgreSQL.PostgreSQL.16`) e aponte `DATABASE_URL`
+e `DATABASE_URL_TESTE` no `.env` para ele. Se o Redis não estiver disponível, o `.env` fica com `REDIS_URL` vazio e
+a fila roda em memória, adequada para uso local com uma única instância.
 
 Com o seed, entre com `admin`, `operador`, `gestor`, `auditor`, `ana.souza` ou `bruno.lima` (senha `Greencode2026`).
 O seed também cria uma **chave de API de demonstração** para a organização BR001 e mostra o segredo no
-terminal (ele não é exibido de novo).
+terminal (ele não é exibido de novo; se perder, crie outra pela tela **Chaves de API** entrando como `admin`).
+
+Se algo der errado, o próprio comando explica o que falta (Docker fechado, PostgreSQL inacessível etc.). Para
+conferir só a preparação, sem subir o servidor: `npm run configurar`.
 
 ### Produção e escala
 
@@ -66,7 +75,8 @@ terminal (ele não é exibido de novo).
 
 | Variável | Padrão | Descrição |
 |---|---|---|
-| `REDIS_URL` | vazio | Redis da fila e do limite de requisições compartilhado; vazio = fila em memória |
+| `POSTGRES_PORTA` / `REDIS_PORTA` | `55432` / `56379` | portas dos containers do Docker (ajustadas automaticamente se estiverem ocupadas) |
+| `REDIS_URL` | `redis://localhost:56379/0` | Redis da fila e do limite de requisições compartilhado; vazio = fila em memória |
 | `WORKER_EMBUTIDO` | `true` | o servidor também processa a fila e os agendamentos |
 | `ANALISES_CRON` / `FUSO_AGENDAMENTOS` | `0 2 * * *` / `America/Sao_Paulo` | análises recorrentes (vazio desativa) |
 | `FILA_TENTATIVAS` / `FILA_ATRASO_MS` | `3` / `5000` | retry dos relatórios: tentativas e espera inicial (dobra a cada falha) |
@@ -82,7 +92,7 @@ terminal (ele não é exibido de novo).
 |---|---|
 | `npm run dev` / `npm start` | servidor (compila antes / versão já compilada) |
 | `npm run worker` / `npm run dev:worker` | worker separado da fila e dos agendamentos (exige Redis) |
-| `npm run configurar` | `.env`, bancos e migrações (pode repetir) |
+| `npm run configurar` | `.env`, PostgreSQL/Redis (Docker), bancos, migrações e seed com o banco vazio (pode repetir; o `dev` e o `test` já chamam) |
 | `npm run db:migrar` / `db:seed` / `db:resetar` | migrações / dados de exemplo / **apaga tudo** e recria |
 | `npm test` | todos os testes (235) |
 | `npm run test:requisitos` | os 20 testes que comprovam os requisitos do enunciado da AV3, um a um (~5 s) |
@@ -137,7 +147,7 @@ decidida pelo processamento, não pelo cliente.
 | PROFISSIONAL | 300 | 5 |
 | CORPORATIVO | 1200 | 20 |
 
-Exemplo de integração (Linux ou Git Bash), com a chave impressa pelo seed:
+Exemplo de integração (Linux ou Git Bash), com a chave impressa pelo seed no primeiro `npm run dev`:
 
 ```bash
 CHAVE='gc_xxxxxxxxxxxx_...'

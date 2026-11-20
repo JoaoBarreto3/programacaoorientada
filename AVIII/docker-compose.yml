@@ -1,13 +1,13 @@
 # Infraestrutura para desenvolvimento e testes (Windows com Docker Desktop, Ubuntu e derivados).
-#   docker compose up -d
-# Porta já ocupada por um PostgreSQL/Redis local? Defina POSTGRES_PORTA/REDIS_PORTA no .env
-# (ex.: 55432/56379) e use a mesma porta em DATABASE_URL/REDIS_URL.
+# Não é preciso subir à mão: "npm run dev" (scripts/configurar.mjs) inicia estes containers quando o
+# PostgreSQL/Redis do .env não respondem e, se a porta estiver ocupada por outro programa, escolhe
+# uma livre e atualiza o .env. As portas padrão (55432 e 56379) evitam conflito com um
+# PostgreSQL (5432) ou Redis (6379) já instalado na máquina.
 # PostgreSQL: bancos "greencode" (aplicação) e "greencode_teste" (testes automatizados).
 # Redis: fila de relatórios (BullMQ) e limite de requisições compartilhado.
 services:
   postgres:
     image: postgres:16
-    container_name: greencode-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: greencode
@@ -15,7 +15,7 @@ services:
       POSTGRES_DB: greencode
       TZ: America/Sao_Paulo
     ports:
-      - "${POSTGRES_PORTA:-5432}:5432"
+      - "${POSTGRES_PORTA:-55432}:5432"
     volumes:
       - dados-postgres:/var/lib/postgresql/data
       - ./scripts/criar-banco-teste.sql:/docker-entrypoint-initdb.d/criar-banco-teste.sql:ro
@@ -26,13 +26,12 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: greencode-redis
     restart: unless-stopped
     # AOF: os jobs da fila sobrevivem a um reinício do Redis.
     # noeviction: o BullMQ exige que o Redis nunca descarte chaves sozinho.
     command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
     ports:
-      - "${REDIS_PORTA:-6379}:6379"
+      - "${REDIS_PORTA:-56379}:6379"
     volumes:
       - dados-redis:/data
     healthcheck:
