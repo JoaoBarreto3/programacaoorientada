@@ -1,0 +1,388 @@
+@startuml greencode-av3
+' Diagrama de classes da AV3: o monólito da AV2 (Controller → Service → Repository) acrescido da
+' camada analítica, da API pública com chaves de API e da fila de processamento assíncrono.
+' Evolução do diagrama da AV1 (diagrama.png): CLIInterface → controllers HTTP; RepositorioArquivo e
+' CriptografiaArquivo → repositórios Prisma/PostgreSQL; JournalTransacao → RegistroAuditoria;
+' Credencial → Usuario; ServicoRelatorio continua e ganha a camada analítica (ServicoAnalise).
+' Gere a imagem com: java -jar plantuml.jar docs/uml/greencode-av3.puml (ou pela extensão PlantUML do VS Code).
+' Em verde: classes novas da AV3.
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+skinparam class {
+  BackgroundColor<<AV3>> #E8F5EC
+  BorderColor<<AV3>> #1F7A4D
+}
+hide empty members
+hide <<AV3>> stereotype
+
+package "http (Fastify)" {
+  class ControllerAutenticacao
+  class ControllerUsuario
+  class ControllerOrganizacao
+  class ControllerLote
+  class ControllerEquipamento
+  class ControllerAdministracao
+  class "autenticacao (hook JWT)" as HookJwt
+  class "tratamentoErros" as TratamentoErros
+  class ControllerAnalise <<AV3>>
+  class ControllerChaveApi <<AV3>>
+  class ControllerRelatorioAssincrono <<AV3>>
+  class ControllerPublico <<AV3>> {
+    /api/v1/public (X-API-Key)
+  }
+  class "autenticacaoParceiro (hook X-API-Key)" as HookChave <<AV3>>
+  class "limites (@fastify/rate-limit)" as Limites <<AV3>> {
+    por IP (login, API pública)
+    por chave (plano)
+  }
+}
+
+package "servicos (regras de negócio + autorização)" {
+  class Servicos <<raiz de composição>>
+  class ServicoAutenticacao {
+    provisionar(login, senha): Sessao
+    login(login, senha): Sessao
+    validarSessao(token): UsuarioAutenticado
+    renovar(usuario): Sessao
+    logout(usuario): void
+    alterarSenha(usuario, atual, nova): Sessao
+  }
+  interface EmissorToken {
+    emitir(conteudo): token
+  }
+  class ServicoUsuario
+  class ServicoOrganizacao {
+    cadastrarOrganizacao(u, dados): Organizacao
+    buscarOrganizacao(u, id): Organizacao
+    listar(u, filtro, pagina): Pagina
+    atualizar(u, id, dados, versao)
+    alterarSituacao(u, id, ativo)
+    excluir(u, id, versao)
+    definirContrato(u, id, dados)
+    renovarContrato(u, id, vencimento)
+    excluirContrato(u, id)
+  }
+  class ServicoLote {
+    criarLote(u, dados): Lote
+    adicionarEquipamentoLote(u, loteId, dados)
+    processarTriagem(u, loteId)
+    consultarLotePorPeriodo(u, inicio, fim)
+    atualizar(u, id, dados, versao)
+    excluir(u, id, versao)
+  }
+  class ServicoEquipamento {
+    rastrearEquipamento(u, id): HistoricoCompleto
+    atualizarEstadoFisico(u, id, estado, justificativa)
+    atualizarStatus(u, id, status, justificativa)
+    registrarMovimentacao(u, id, destino)
+    gerarCodigoBarras(tipo, sequencia): string
+    atualizarDados(u, id, dados, versao)
+    excluir(u, id, versao)
+  }
+  class ServicoParametros
+  class ServicoRelatorio
+  class ServicoAuditoria
+  class ServicoAnalise <<AV3>> {
+    eficiencia(ator, escopo)
+    rentabilidade(ator, escopo)
+    estimativa(ator, consulta, escopo)
+    vidaUtil(ator, escopo, limite, horizonte)
+    aderencia(ator, escopo)
+    executarEPersistir(tipo, escopo, origem, solicitante)
+  }
+  class ServicoChaveApi <<AV3>> {
+    criar(u, dados): {chave, segredo}
+    atualizar(u, id, dados, versao)
+    rotacionar(u, id): {chave, segredo}
+    revogar(u, id)
+    autenticar(chave): ParceiroAutenticado
+  }
+  class ServicoRelatorioAssincrono <<AV3>> {
+    solicitar(ator, pedido): Tarefa
+    consultar(ator, id) / listar / baixar
+    processar(tarefaId, tentativa)   ' worker
+    recuperarPendentes() / expurgarExpiradas()
+  }
+  class "autorizacao" as Autorizacao <<AV3>> {
+    exigirPermissao(ator, permissao)
+    exigirMesmaOrganizacao(ator, org)
+  }
+}
+
+package "analises (funções puras)" <<AV3>> {
+  class AnaliseEficiencia <<AV3>> {
+    analisarEficiencia(lotes, agora)
+  }
+  class AnaliseRentabilidade <<AV3>> {
+    analisarRentabilidade(itens)
+    estimarValorRecuperacao(itens, consulta)
+  }
+  class AnaliseVidaUtil <<AV3>> {
+    ajustarModelo(tipo, pontos, coef)   ' MQO
+    taxaArmazenagem(equipamentos, agora)
+    preverEquipamento(e, modelo, agora)
+    compararPrevisoes(previsoes, reais, agora)
+  }
+  class estatistica <<AV3>> {
+    resumir(), regressaoLinear(), limiteAtipico()
+  }
+  note right of estatistica : fachada da biblioteca\nsimple-statistics
+}
+
+package "infra/fila" <<AV3>> {
+  interface FilaTarefas <<AV3>> {
+    enfileirar(tarefaId)
+    iniciarWorker(processar)
+    agendar(agendamentos, fuso)
+    disponivel(), fechar()
+  }
+  class FilaBullMQ <<AV3>> {
+    Redis + BullMQ
+    jobId = tarefaId, backoff exponencial
+    upsertJobScheduler (cron)
+  }
+  class FilaMemoria <<AV3>> {
+    mesmo retry, node-cron
+  }
+  class FalhaDefinitiva <<AV3>>
+  class "worker.ts (npm run worker)" as Worker <<AV3>>
+}
+
+package "repositorios (Prisma Client)" {
+  class UnidadeDeTrabalho {
+    leitura: Repositorios
+    executar(operacao): Promise   ' prisma.$transaction
+  }
+  class Repositorios
+  class RepositorioUsuario
+  class RepositorioOrganizacao
+  class RepositorioLote
+  class RepositorioEquipamento
+  class RepositorioParametros
+  class RepositorioAuditoria
+  class GeradorCodigos <<sequências do PostgreSQL>>
+  class RepositorioAnalises <<AV3>>
+  class RepositorioChaveApi <<AV3>>
+  class RepositorioTarefas <<AV3>>
+}
+
+package "dominio" {
+  abstract class EntidadeVersionada {
+    versao: number
+    verificarVersao(esperada)
+  }
+  interface Autenticavel {
+    autenticar(usuario, senha): Promise<boolean>
+  }
+  class Usuario {
+    login, hashSenha, salt, papel, ativo
+    tentativasFalhas, bloqueadoAte, versaoToken
+    verificarSenha(senha)
+    registrarFalhaLogin(agora)
+    invalidarTokens()
+  }
+  class Sessao {
+    token, usuario, papel, criacao, expiracao
+    isValida(agora)
+  }
+  class Organizacao {
+    id, razaoSocial, cnpj, inscricaoEstadual
+    enderecoCompleto, telefone, email, ativo
+    alterarEndereco(), desativar(), reativar()
+    exigirAptaParaColeta(hoje)
+  }
+  class Contrato {
+    dataAssinatura, dataVencimento
+    clausulas: string[], valorMensal, renovacaoAutomatica
+    estaVigente(hoje), renovar(vencimento, hoje)
+  }
+  class Lote <<raiz do agregado>> {
+    id, dataEntrada, notaFiscal, transportadora
+    statusProcessamento: StatusLote
+    triagemIniciadaEm/Por, triagemConcluidaEm/Por  ' AV3
+    adicionarEquipamento(), removerEquipamento()
+    avancarTriagem(), atualizarStatusEquipamento()
+    calcularPesoTotal(), gerarRelatorioTriagem()
+  }
+  class Equipamento {
+    id, codigoBarrasInterno, tipo, marca, modelo
+    anoFabricacao, estadoFisico, pesoQuilogramas
+    posicaoNoLote, statusRastreamento
+    atualizarStatus(), atualizarEstadoFisico()
+    registrarMovimentacao(), calcularDepreciacao()
+  }
+  class Movimentacao {
+    natureza: NaturezaMovimentacao
+    dataHora, origem, destino, responsavel, observacao
+  }
+  class ParametrosGlobais
+  class ChaveApi <<AV3>> {
+    nome, prefixo, hashSegredo
+    escopos: EscopoApi[], plano: PlanoApi
+    organizacaoId?, ativa, expiraEm, revogadaEm
+    utilizavel(agora), alterar(), rotacionar(), revogar()
+    paraParceiro(): ParceiroAutenticado
+  }
+  class ParceiroAutenticado <<AV3>> {
+    id, login (api:prefixo), organizacaoId?
+    escopos, plano
+  }
+  class UsuarioAutenticado {
+    id, login, papel
+  }
+  enum EscopoApi <<AV3>> {
+    RASTREABILIDADE_LER
+    LOTES_LER
+    LOTES_ESCREVER
+    RELATORIOS_GERAR
+  }
+  enum PlanoApi <<AV3>> {
+    BASICO (60/min, 2)
+    PROFISSIONAL (300/min, 5)
+    CORPORATIVO (1200/min, 20)
+  }
+  class ExecucaoAnalise <<AV3>> {
+    tipo, origem (AGENDADA|MANUAL)
+    organizacaoId?, parametros, resultado (JSONB)
+    iniciadaEm, concluidaEm, duracaoMs
+  }
+  class PrevisaoVidaUtil <<AV3>> {
+    equipamentoId, tipo, estadoFisico
+    idadeAnos, anosRestantes
+    dataPrevistaInservivel, metodo
+  }
+  class TarefaRelatorio <<AV3>> {
+    tipo, formato (JSON|CSV), situacao
+    tentativas, erro, conteudo, hashConteudo
+    criadaEm, concluidaEm, expiraEm
+  }
+  abstract class Validador <<abstract>> {
+    validar(objeto): boolean
+    obterMensagemErro(): string
+  }
+  class ValidadorCNPJ
+  class ValidadorDataEntrada
+  class ValidadorSenha
+  class ValidadorUsuario
+  class ValidadorEmail
+  class ValidadorNotaFiscal
+}
+
+package "fabricas" {
+  class FabricaOrganizacao
+  class FabricaLote
+  class FabricaEquipamento
+  class FabricaUsuario
+}
+
+' ---- camadas
+ControllerAutenticacao --> ServicoAutenticacao
+ControllerUsuario --> ServicoUsuario
+ControllerOrganizacao --> ServicoOrganizacao
+ControllerLote --> ServicoLote
+ControllerEquipamento --> ServicoEquipamento
+ControllerAdministracao --> ServicoParametros
+ControllerAdministracao --> ServicoRelatorio
+ControllerAdministracao --> ServicoAuditoria
+HookJwt --> ServicoAutenticacao : validarSessao
+ServicoAutenticacao --> EmissorToken
+Servicos *-- ServicoAutenticacao
+Servicos *-- ServicoOrganizacao
+Servicos *-- ServicoLote
+Servicos *-- ServicoEquipamento
+Servicos *-- UnidadeDeTrabalho
+
+ServicoOrganizacao --> UnidadeDeTrabalho
+ServicoLote --> UnidadeDeTrabalho
+ServicoEquipamento --> UnidadeDeTrabalho
+ServicoUsuario --> UnidadeDeTrabalho
+ServicoParametros --> UnidadeDeTrabalho
+ServicoRelatorio --> UnidadeDeTrabalho
+ServicoAuditoria --> UnidadeDeTrabalho
+UnidadeDeTrabalho --> Repositorios
+Repositorios *-- RepositorioUsuario
+Repositorios *-- RepositorioOrganizacao
+Repositorios *-- RepositorioLote
+Repositorios *-- RepositorioEquipamento
+Repositorios *-- RepositorioParametros
+Repositorios *-- RepositorioAuditoria
+Repositorios *-- GeradorCodigos
+
+ServicoOrganizacao ..> FabricaOrganizacao : cria via
+ServicoLote ..> FabricaLote : cria via
+ServicoLote ..> FabricaEquipamento : cria via
+ServicoUsuario ..> FabricaUsuario : cria via
+FabricaOrganizacao --> ValidadorCNPJ
+FabricaLote --> ValidadorDataEntrada
+
+' ---- domínio (relacionamentos pedidos na AV2)
+EntidadeVersionada <|-- Usuario
+EntidadeVersionada <|-- Organizacao
+EntidadeVersionada <|-- Contrato
+EntidadeVersionada <|-- Lote
+EntidadeVersionada <|-- Equipamento
+EntidadeVersionada <|-- ParametrosGlobais
+Usuario ..|> Autenticavel
+Validador <|-- ValidadorCNPJ
+Validador <|-- ValidadorDataEntrada
+Validador <|-- ValidadorSenha
+Validador <|-- ValidadorUsuario
+Validador <|-- ValidadorEmail
+Validador <|-- ValidadorNotaFiscal
+Usuario "1" --> "0..*" Sessao : gera >
+Organizacao "1" -- "0..1" Contrato : possui >
+Organizacao "1" -- "0..*" Lote : gera >
+Lote "1" *-- "0..*" Equipamento : contém >
+Equipamento "1" *-- "0..*" Movimentacao : registra >
+Equipamento ..> ParametrosGlobais : depreciação
+
+' ---- AV3: camada analítica, API pública e fila
+ControllerAnalise --> ServicoAnalise
+ControllerChaveApi --> ServicoChaveApi
+ControllerRelatorioAssincrono --> ServicoRelatorioAssincrono
+ControllerPublico --> ServicoLote : mesmas regras
+ControllerPublico --> ServicoEquipamento : rastreamento
+ControllerPublico --> ServicoAnalise
+ControllerPublico --> ServicoRelatorioAssincrono
+ControllerPublico ..> Limites
+ControllerPublico ..> HookChave
+HookChave --> ServicoChaveApi : autenticar
+Servicos *-- ServicoAnalise
+Servicos *-- ServicoChaveApi
+Servicos *-- ServicoRelatorioAssincrono
+Servicos o-- FilaTarefas
+ServicoAnalise ..> AnaliseEficiencia
+ServicoAnalise ..> AnaliseRentabilidade
+ServicoAnalise ..> AnaliseVidaUtil
+AnaliseEficiencia ..> estatistica
+AnaliseRentabilidade ..> estatistica
+AnaliseVidaUtil ..> estatistica
+ServicoAnalise --> UnidadeDeTrabalho
+ServicoChaveApi --> UnidadeDeTrabalho
+ServicoRelatorioAssincrono --> UnidadeDeTrabalho
+ServicoRelatorioAssincrono --> ServicoAnalise : gera arquivos
+ServicoRelatorioAssincrono --> FilaTarefas : publica o id
+FilaTarefas <|.. FilaBullMQ
+FilaTarefas <|.. FilaMemoria
+FilaBullMQ ..> FalhaDefinitiva : UnrecoverableError
+Worker --> FilaTarefas : consome
+Worker --> ServicoRelatorioAssincrono : processar
+ServicoLote ..> Autorizacao
+ServicoEquipamento ..> Autorizacao
+ServicoAnalise ..> Autorizacao
+ServicoRelatorioAssincrono ..> Autorizacao
+Repositorios *-- RepositorioAnalises
+Repositorios *-- RepositorioChaveApi
+Repositorios *-- RepositorioTarefas
+EntidadeVersionada <|-- ChaveApi
+ChaveApi --> EscopoApi
+ChaveApi --> PlanoApi
+ChaveApi ..> ParceiroAutenticado : paraParceiro()
+Organizacao "1" -- "0..*" ChaveApi : acessada por >
+ExecucaoAnalise "1" *-- "0..*" PrevisaoVidaUtil : grava >
+PrevisaoVidaUtil ..> Equipamento : prevê (sem FK)
+ChaveApi "0..1" -- "0..*" TarefaRelatorio : solicita >
+note "Ator = UsuarioAutenticado | ParceiroAutenticado:\nos serviços autorizam pelo papel (usuário)\nou pelos escopos (parceiro), com as mesmas regras." as NotaAtor
+UsuarioAutenticado .. NotaAtor
+ParceiroAutenticado .. NotaAtor
+@enduml

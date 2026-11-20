@@ -1,0 +1,417 @@
+// Modelo de dados do greencode (AV3).
+// Reproduz o modelo de domínio da AV1 (Organizacao, Contrato, Lote, Equipamento, Movimentacao),
+// acrescenta Usuario, ParametrosGlobais e RegistroAuditoria (AV2) e, na AV3, a camada analítica
+// (ExecucaoAnalise, PrevisaoVidaUtil), a API pública (ChaveApi) e os relatórios assíncronos (TarefaRelatorio).
+//
+// Convenções:
+//  - tabelas e colunas em snake_case no banco (@@map/@map); modelos e campos em camelCase no código;
+//  - "versao" em todas as entidades alteráveis: versionamento otimista (ver docs/ARQUITETURA.md);
+//  - restrições que o Prisma não expressa (CHECK, triggers) ficam na migração SQL "regras_integridade".
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "cjs"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------- enumerações
+
+enum PapelUsuario {
+  ADMINISTRADOR
+  OPERADOR_CADASTRO
+  GESTOR_ALMOXARIFADO
+  AUDITOR
+
+  @@map("papel_usuario")
+}
+
+enum StatusLote {
+  RECEBIDO
+  EM_TRIAGEM
+  TRIAGEM_CONCLUIDA
+  ENCAMINHADO
+  FINALIZADO
+
+  @@map("status_lote")
+}
+
+enum TipoEquipamento {
+  COMPUTADOR_MESA
+  NOTEBOOK
+  MONITOR
+  IMPRESSORA
+  SERVIDOR
+  ROTEADOR
+  CABO_ESTRUTURADO
+  FONTE_ALIMENTACAO
+
+  @@map("tipo_equipamento")
+}
+
+enum EstadoFisico {
+  NOVO
+  BOM_ESTADO
+  USADO_LEVE
+  USADO_MODERADO
+  DANIFICADO_LEVE
+  DANIFICADO_GRAVE
+  INSERVIVEL
+
+  @@map("estado_fisico")
+}
+
+enum StatusRastreamento {
+  AGUARDANDO_TRIAGEM
+  EM_TRIAGEM
+  AGUARDANDO_DESMONTE
+  EM_DESMONTE
+  PECAS_REAPROVEITADAS
+  MATERIAL_RECICLAVEL
+  DESCARTE_SEGURO
+  BAIXA_DEFINITIVA
+
+  @@map("status_rastreamento")
+}
+
+// Na AV1 a natureza era deduzida comparando textos; agora é uma coluna explícita.
+enum NaturezaMovimentacao {
+  LOCALIZACAO
+  STATUS
+  ESTADO_FISICO
+
+  @@map("natureza_movimentacao")
+}
+
+// ---------------------------------------------------------------- acesso
+
+model Usuario {
+  id               String       @id @default(uuid()) @db.Uuid
+  login            String       @unique @db.VarChar(32)
+  hashSenha        String       @map("hash_senha")
+  salt             String       @db.Char(32)
+  papel            PapelUsuario
+  ativo            Boolean      @default(true)
+  ultimoAcesso     DateTime?    @map("ultimo_acesso") @db.Timestamptz(3)
+  tentativasFalhas Int          @default(0) @map("tentativas_falhas")
+  bloqueadoAte     DateTime?    @map("bloqueado_ate") @db.Timestamptz(3)
+  // Incrementada no logout, na troca de senha e na desativação: invalida os JWT já emitidos.
+  versaoToken      Int          @default(0) @map("versao_token")
+  criadoEm         DateTime     @default(now()) @map("criado_em") @db.Timestamptz(3)
+  atualizadoEm     DateTime     @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+  versao           Int          @default(1)
+
+  @@map("usuarios")
+}
+
+// ---------------------------------------------------------------- cadastro
+
+model Organizacao {
+  // Código legível (BR001, BR002...) gerado pela sequência seq_organizacao.
+  id                String    @id @db.VarChar(12)
+  razaoSocial       String    @map("razao_social") @db.VarChar(150)
+  cnpj              String    @unique @db.Char(14)
+  inscricaoEstadual String    @default("ISENTO") @map("inscricao_estadual") @db.VarChar(18)
+  enderecoCompleto  String    @map("endereco_completo") @db.VarChar(300)
+  telefone          String    @default("") @db.VarChar(13)
+  email             String    @db.VarChar(150)
+  dataCadastro      DateTime  @default(now()) @map("data_cadastro") @db.Timestamptz(3)
+  ativo             Boolean   @default(true)
+  atualizadoEm      DateTime  @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+  versao            Int       @default(1)
+  contrato          Contrato?
+  lotes             Lote[]
+  chavesApi         ChaveApi[]
+
+  @@index([ativo])
+  @@map("organizacoes")
+}
+
+model Contrato {
+  id                  String      @id @default(uuid()) @db.Uuid
+  // @unique garante a cardinalidade 0..1 (uma organização tem no máximo um contrato).
+  organizacaoId       String      @unique @map("organizacao_id") @db.VarChar(12)
+  organizacao         Organizacao @relation(fields: [organizacaoId], references: [id], onDelete: Cascade)
+  dataAssinatura      DateTime    @map("data_assinatura") @db.Date
+  dataVencimento      DateTime    @map("data_vencimento") @db.Date
+  // Lista de cláusulas em JSONB (dado semiestruturado).
+  clausulas           Json        @db.JsonB
+  valorMensal         Decimal     @map("valor_mensal") @db.Decimal(12, 2)
+  renovacaoAutomatica Boolean     @default(false) @map("renovacao_automatica")
+  atualizadoEm        DateTime    @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+  versao              Int         @default(1)
+
+  @@map("contratos")
+}
+
+// ---------------------------------------------------------------- almoxarifado
+
+model Lote {
+  // Código legível (LT-2026-0001) gerado pela sequência seq_lote.
+  id                  String        @id @db.VarChar(16)
+  dataEntrada         DateTime      @map("data_entrada") @db.Date
+  organizacaoId       String        @map("organizacao_id") @db.VarChar(12)
+  // Restrict: uma organização com lotes não pode ser excluída (deve ser desativada).
+  organizacao         Organizacao   @relation(fields: [organizacaoId], references: [id], onDelete: Restrict)
+  notaFiscal          String        @map("nota_fiscal") @db.VarChar(9)
+  transportadora      String        @db.VarChar(100)
+  statusProcessamento StatusLote    @default(RECEBIDO) @map("status_processamento")
+  observacoes         String        @default("") @db.VarChar(1000)
+  // AV3: instantes e responsáveis da triagem, base da análise de eficiência operacional.
+  triagemIniciadaEm   DateTime?     @map("triagem_iniciada_em") @db.Timestamptz(3)
+  triagemIniciadaPor  String?       @map("triagem_iniciada_por") @db.VarChar(40)
+  triagemConcluidaEm  DateTime?     @map("triagem_concluida_em") @db.Timestamptz(3)
+  triagemConcluidaPor String?       @map("triagem_concluida_por") @db.VarChar(40)
+  criadoEm            DateTime      @default(now()) @map("criado_em") @db.Timestamptz(3)
+  atualizadoEm        DateTime      @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+  versao              Int           @default(1)
+  equipamentos        Equipamento[]
+
+  // A mesma nota fiscal não pode ser registrada duas vezes para a mesma organização.
+  @@unique([organizacaoId, notaFiscal])
+  @@index([dataEntrada])
+  @@index([statusProcessamento])
+  @@index([triagemConcluidaEm])
+  @@map("lotes")
+}
+
+model Equipamento {
+  // Código legível (EQ-000001) gerado pela sequência seq_equipamento.
+  id                  String             @id @db.VarChar(12)
+  codigoBarrasInterno String             @unique @map("codigo_barras_interno") @db.VarChar(13)
+  tipo                TipoEquipamento
+  marca               String             @db.VarChar(60)
+  modelo              String             @db.VarChar(80)
+  anoFabricacao       Int                @map("ano_fabricacao")
+  estadoFisico        EstadoFisico       @map("estado_fisico")
+  pesoQuilogramas     Decimal            @map("peso_quilogramas") @db.Decimal(8, 3)
+  loteId              String             @map("lote_id") @db.VarChar(16)
+  // Cascade: só ocorre ao excluir um lote RECEBIDO (regra garantida pelo serviço e por trigger).
+  lote                Lote               @relation(fields: [loteId], references: [id], onDelete: Cascade)
+  posicaoNoLote       Int                @map("posicao_no_lote")
+  statusRastreamento  StatusRastreamento @default(AGUARDANDO_TRIAGEM) @map("status_rastreamento")
+  criadoEm            DateTime           @default(now()) @map("criado_em") @db.Timestamptz(3)
+  atualizadoEm        DateTime           @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+  versao              Int                @default(1)
+  movimentacoes       Movimentacao[]
+
+  @@unique([loteId, posicaoNoLote])
+  @@index([statusRastreamento])
+  @@index([tipo])
+  @@map("equipamentos")
+}
+
+model Movimentacao {
+  id            String               @id @default(uuid()) @db.Uuid
+  equipamentoId String               @map("equipamento_id") @db.VarChar(12)
+  equipamento   Equipamento          @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
+  natureza      NaturezaMovimentacao
+  dataHora      DateTime             @default(now()) @map("data_hora") @db.Timestamptz(3)
+  origem        String               @db.VarChar(120)
+  destino       String               @db.VarChar(120)
+  responsavel   String               @db.VarChar(32)
+  observacao    String               @default("") @db.VarChar(1000)
+
+  @@index([equipamentoId, dataHora])
+  @@map("movimentacoes")
+}
+
+// ---------------------------------------------------------------- configuração e auditoria
+
+model ParametrosGlobais {
+  id                      String   @id @default("globais") @db.VarChar(16)
+  // Ex.: { "ISS": 0.05, "PIS": 0.0165, "COFINS": 0.076 }
+  aliquotas               Json     @db.JsonB
+  // Por TipoEquipamento: fração de depreciação anual.
+  coeficientesDepreciacao Json     @map("coeficientes_depreciacao") @db.JsonB
+  // Por TipoEquipamento: valor de referência de um equipamento novo (R$).
+  valoresReferencia       Json     @map("valores_referencia") @db.JsonB
+  retencaoAuditoriaDias   Int      @default(180) @map("retencao_auditoria_dias")
+  atualizadoEm            DateTime @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+  versao                  Int      @default(1)
+
+  @@map("parametros_globais")
+}
+
+// Sucessor do journal da AV1: cada operação de escrita grava aqui, na mesma transação,
+// o estado antes e depois. A tabela é somente-inclusão (trigger bloqueia UPDATE e DELETE
+// de registros dentro do prazo de retenção).
+model RegistroAuditoria {
+  id          String   @id @default(uuid()) @db.Uuid
+  dataHora    DateTime @default(now()) @map("data_hora") @db.Timestamptz(3)
+  operacao    String   @db.VarChar(40)
+  entidade    String   @db.VarChar(30)
+  entidadeId  String   @map("entidade_id") @db.VarChar(40)
+  usuario     String   @db.VarChar(32)
+  dadosAntes  Json?    @map("dados_antes") @db.JsonB
+  dadosDepois Json?    @map("dados_depois") @db.JsonB
+
+  @@index([entidade, entidadeId])
+  @@index([dataHora])
+  @@index([usuario])
+  @@map("registros_auditoria")
+}
+
+// ---------------------------------------------------------------- AV3: API pública
+
+// O que cada chave de API pode fazer (definido pelo contrato comercial do parceiro).
+enum EscopoApi {
+  RASTREABILIDADE_LER
+  LOTES_LER
+  LOTES_ESCREVER
+  RELATORIOS_GERAR
+
+  @@map("escopo_api")
+}
+
+// Plano de acesso: define o limite de requisições por minuto e de relatórios simultâneos.
+enum PlanoApi {
+  BASICO
+  PROFISSIONAL
+  CORPORATIVO
+
+  @@map("plano_api")
+}
+
+// Chave de acesso de um parceiro externo. O segredo nunca é gravado: só o hash SHA-256.
+// O prefixo (público) localiza a chave sem varrer a tabela; o segredo é conferido pelo hash.
+model ChaveApi {
+  id            String       @id @default(uuid()) @db.Uuid
+  nome          String       @db.VarChar(100)
+  prefixo       String       @unique @db.Char(12)
+  hashSegredo   String       @map("hash_segredo") @db.Char(64)
+  escopos       EscopoApi[]
+  plano         PlanoApi     @default(BASICO)
+  // Chave ligada a uma organização só enxerga os dados dela. Sem organização: leitura global.
+  organizacaoId String?      @map("organizacao_id") @db.VarChar(12)
+  organizacao   Organizacao? @relation(fields: [organizacaoId], references: [id], onDelete: Cascade)
+  ativa         Boolean      @default(true)
+  expiraEm      DateTime?    @map("expira_em") @db.Timestamptz(3)
+  revogadaEm    DateTime?    @map("revogada_em") @db.Timestamptz(3)
+  ultimoUsoEm   DateTime?    @map("ultimo_uso_em") @db.Timestamptz(3)
+  criadaPor     String       @map("criada_por") @db.VarChar(32)
+  criadaEm      DateTime     @default(now()) @map("criada_em") @db.Timestamptz(3)
+  atualizadaEm  DateTime     @updatedAt @map("atualizada_em") @db.Timestamptz(3)
+  versao        Int          @default(1)
+  tarefas       TarefaRelatorio[]
+
+  @@index([organizacaoId])
+  @@map("chaves_api")
+}
+
+// ---------------------------------------------------------------- AV3: camada analítica
+
+enum TipoAnalise {
+  EFICIENCIA_OPERACIONAL
+  RENTABILIDADE
+  VIDA_UTIL
+
+  @@map("tipo_analise")
+}
+
+enum OrigemAnalise {
+  AGENDADA
+  MANUAL
+
+  @@map("origem_analise")
+}
+
+// Cada execução de uma análise fica guardada para consulta histórica e para comparar
+// previsões com o que aconteceu depois. O resultado agregado (variável por tipo) fica em JSONB.
+model ExecucaoAnalise {
+  id            String             @id @default(uuid()) @db.Uuid
+  tipo          TipoAnalise
+  origem        OrigemAnalise
+  // Escopo da análise (null = todas as organizações). Sem chave estrangeira: é um retrato histórico.
+  organizacaoId String?            @map("organizacao_id") @db.VarChar(12)
+  parametros    Json               @db.JsonB
+  resultado     Json               @db.JsonB
+  solicitante   String             @db.VarChar(40)
+  iniciadaEm    DateTime           @map("iniciada_em") @db.Timestamptz(3)
+  concluidaEm   DateTime           @map("concluida_em") @db.Timestamptz(3)
+  duracaoMs     Int                @map("duracao_ms")
+  previsoes     PrevisaoVidaUtil[]
+
+  @@index([tipo, concluidaEm])
+  @@map("execucoes_analise")
+}
+
+// Previsão de vida útil de cada equipamento numa execução (tabela normalizada: permite cruzar
+// a previsão com a data real em que o equipamento ficou inservível).
+model PrevisaoVidaUtil {
+  execucaoId             String          @map("execucao_id") @db.Uuid
+  execucao               ExecucaoAnalise @relation(fields: [execucaoId], references: [id], onDelete: Cascade)
+  // Sem chave estrangeira: a previsão continua valendo como histórico mesmo que o equipamento saia.
+  equipamentoId          String          @map("equipamento_id") @db.VarChar(12)
+  tipo                   TipoEquipamento
+  estadoFisico           EstadoFisico    @map("estado_fisico")
+  idadeAnos              Decimal         @map("idade_anos") @db.Decimal(6, 2)
+  anosRestantes          Decimal         @map("anos_restantes") @db.Decimal(6, 2)
+  dataPrevistaInservivel DateTime        @map("data_prevista_inservivel") @db.Date
+  metodo                 String          @db.VarChar(30)
+
+  @@id([execucaoId, equipamentoId])
+  @@index([equipamentoId])
+  @@map("previsoes_vida_util")
+}
+
+// ---------------------------------------------------------------- AV3: relatórios assíncronos
+
+enum TipoRelatorio {
+  EFICIENCIA_OPERACIONAL
+  RENTABILIDADE
+  VIDA_UTIL
+  INVENTARIO_RASTREABILIDADE
+
+  @@map("tipo_relatorio")
+}
+
+enum FormatoRelatorio {
+  JSON
+  CSV
+
+  @@map("formato_relatorio")
+}
+
+enum SituacaoTarefa {
+  PENDENTE
+  PROCESSANDO
+  CONCLUIDA
+  FALHOU
+
+  @@map("situacao_tarefa")
+}
+
+// Pedido de relatório processado em segundo plano pela fila (BullMQ). O banco é a fonte da
+// verdade da situação; a fila só transporta o id. O arquivo gerado fica na própria linha.
+model TarefaRelatorio {
+  id            String           @id @default(uuid()) @db.Uuid
+  tipo          TipoRelatorio
+  formato       FormatoRelatorio
+  parametros    Json             @db.JsonB
+  organizacaoId String?          @map("organizacao_id") @db.VarChar(12)
+  solicitante   String           @db.VarChar(40)
+  chaveApiId    String?          @map("chave_api_id") @db.Uuid
+  chaveApi      ChaveApi?        @relation(fields: [chaveApiId], references: [id], onDelete: SetNull)
+  situacao      SituacaoTarefa   @default(PENDENTE)
+  tentativas    Int              @default(0)
+  erro          String?          @db.VarChar(1000)
+  criadaEm      DateTime         @default(now()) @map("criada_em") @db.Timestamptz(3)
+  iniciadaEm    DateTime?        @map("iniciada_em") @db.Timestamptz(3)
+  concluidaEm   DateTime?        @map("concluida_em") @db.Timestamptz(3)
+  expiraEm      DateTime?        @map("expira_em") @db.Timestamptz(3)
+  conteudo      String?
+  tipoConteudo  String?          @map("tipo_conteudo") @db.VarChar(60)
+  tamanhoBytes  Int?             @map("tamanho_bytes")
+  hashConteudo  String?          @map("hash_conteudo") @db.Char(64)
+
+  @@index([situacao])
+  @@index([chaveApiId, situacao])
+  @@index([solicitante, criadaEm])
+  @@index([expiraEm])
+  @@map("tarefas_relatorio")
+}

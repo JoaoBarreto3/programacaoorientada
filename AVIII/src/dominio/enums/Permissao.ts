@@ -1,0 +1,63 @@
+import PapelUsuario from "./PapelUsuario";
+
+export const Permissao = {
+    USUARIOS_GERENCIAR: "USUARIOS_GERENCIAR",
+    PARAMETROS_GERENCIAR: "PARAMETROS_GERENCIAR",
+    PARAMETROS_LER: "PARAMETROS_LER",
+    ORGANIZACOES_ESCREVER: "ORGANIZACOES_ESCREVER",
+    ORGANIZACOES_LER: "ORGANIZACOES_LER",
+    LOTES_ESCREVER: "LOTES_ESCREVER",
+    LOTES_LER: "LOTES_LER",
+    EQUIPAMENTOS_ESCREVER: "EQUIPAMENTOS_ESCREVER",
+    EQUIPAMENTOS_LER: "EQUIPAMENTOS_LER",
+    RELATORIOS_GERAR: "RELATORIOS_GERAR",
+    AUDITORIA_LER: "AUDITORIA_LER",
+    AUDITORIA_EXPURGAR: "AUDITORIA_EXPURGAR",
+    // AV3: camada analítica, relatórios assíncronos e API pública.
+    ANALISES_LER: "ANALISES_LER",
+    ANALISES_EXECUTAR: "ANALISES_EXECUTAR",
+    RELATORIOS_ASSINCRONOS: "RELATORIOS_ASSINCRONOS",
+    CHAVES_API_GERENCIAR: "CHAVES_API_GERENCIAR"
+} as const;
+export type Permissao = (typeof Permissao)[keyof typeof Permissao];
+
+// Segregação de funções da AV1:
+//  - ADMINISTRADOR: contas de acesso e parâmetros globais (e, por ser privilegiado, todo o resto);
+//  - OPERADOR_CADASTRO: organizações clientes e contratos de coleta;
+//  - GESTOR_ALMOXARIFADO: lotes, triagem, equipamentos e códigos de barras;
+//  - AUDITOR: apenas consultas, relatórios e auditoria, sem nenhuma alteração.
+// AV3: análises para quem decide (auditor e gestor); executar e guardar uma análise é do auditor;
+// chaves de API (contratos com parceiros) só o administrador gerencia.
+export const PERMISSOES_POR_PAPEL: Record<PapelUsuario, ReadonlySet<Permissao>> = {
+    [PapelUsuario.ADMINISTRADOR]: new Set(Object.values(Permissao)),
+    [PapelUsuario.OPERADOR_CADASTRO]: new Set([
+        Permissao.ORGANIZACOES_ESCREVER,
+        Permissao.ORGANIZACOES_LER
+    ]),
+    [PapelUsuario.GESTOR_ALMOXARIFADO]: new Set([
+        Permissao.ORGANIZACOES_LER,
+        Permissao.LOTES_ESCREVER,
+        Permissao.LOTES_LER,
+        Permissao.EQUIPAMENTOS_ESCREVER,
+        Permissao.EQUIPAMENTOS_LER,
+        Permissao.ANALISES_LER,
+        Permissao.RELATORIOS_ASSINCRONOS
+    ]),
+    [PapelUsuario.AUDITOR]: new Set([
+        Permissao.PARAMETROS_LER,
+        Permissao.ORGANIZACOES_LER,
+        Permissao.LOTES_LER,
+        Permissao.EQUIPAMENTOS_LER,
+        Permissao.RELATORIOS_GERAR,
+        Permissao.AUDITORIA_LER,
+        Permissao.ANALISES_LER,
+        Permissao.ANALISES_EXECUTAR,
+        Permissao.RELATORIOS_ASSINCRONOS
+    ])
+};
+
+export function papelPossui(papel: PapelUsuario, permissao: Permissao): boolean {
+    return PERMISSOES_POR_PAPEL[papel].has(permissao);
+}
+
+export default Permissao;

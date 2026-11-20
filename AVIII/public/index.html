@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>greencode</title>
+    <meta name="description" content="greencode - logística reversa de resíduos eletrônicos">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f7a4d'/%3E%3Cpath d='M9 17l5 5 9-11' stroke='white' stroke-width='3.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+    <link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+    <header id="topo" hidden>
+        <div class="marca"><span class="logo">g</span> greencode</div>
+        <nav id="menu" aria-label="Menu principal"></nav>
+        <div class="usuario">
+            <span id="usuario-nome"></span>
+            <button type="button" class="botao secundario pequeno" id="botao-sair">Sair</button>
+        </div>
+    </header>
+    <main id="conteudo" tabindex="-1"></main>
+    <div id="avisos" aria-live="polite"></div>
+    <dialog id="dialogo"><form method="dialog" id="dialogo-form"></form></dialog>
+    <script src="app.js"></script>
+</body>
+</html>

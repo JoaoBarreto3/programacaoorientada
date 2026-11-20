@@ -1,266 +1,218 @@
-# greencode: API REST (AV2)
+# greencode AV3: camada analítica, API pública e processamento assíncrono
 
-Servidor HTTP monolítico do greencode, plataforma de logística reversa de resíduos eletrônicos.
-Evolução da CLI da AV1 (pasta `AVI` na branch `master`): **Node.js + TypeScript + Fastify + Prisma ORM + PostgreSQL**, autenticação
-**JWT**, arquitetura em camadas **Controller → Service → Repository**, CRUD completo e front-end SPA.
+Terceira etapa do greencode, plataforma de logística reversa de resíduos eletrônicos. Parte do servidor
+monolítico da AV2 (Node.js + TypeScript + Fastify + Prisma + PostgreSQL, na pasta [`AVII/`](AVII), também disponível na
+branch `AVII`) e acrescenta:
 
-Todo o código fica na pasta [`AVII/`](AVII). Os comandos e caminhos citados neste README (`src/`, `tests/`, `prisma/`…)
-são relativos a essa pasta.
+- **Camada analítica**: eficiência operacional, rentabilidade por tipo de equipamento e previsão de vida útil
+  remanescente (regressão por mínimos quadrados com `simple-statistics`), calculadas sob demanda ou por
+  agendamento e **gravadas para consulta histórica**, com medição da aderência das previsões.
+- **API pública** `/api/v1/public` para parceiros: chaves de API com escopos e planos, limite de requisições
+  (`@fastify/rate-limit`) e documentação OpenAPI própria.
+- **Processamento assíncrono** de relatórios pesados com **BullMQ + Redis**: resposta 202 imediata, consulta da
+  situação e download (CSV ou JSON), com política de retry.
 
-- Decisões de arquitetura, trade-offs, segurança, cenários de falha e revisão da AV1: [docs/ARQUITETURA.md](AVII/docs/ARQUITETURA.md)
-- Diagrama de classes (PlantUML): [docs/uml/greencode-av2.puml](AVII/docs/uml/greencode-av2.puml)
-- Documentação interativa da API (OpenAPI/Swagger): `http://localhost:3000/docs` com o servidor no ar
+Todo o código da AV3 fica na pasta [`AVIII/`](AVIII). Os comandos e caminhos citados neste README (`src/`, `tests/`,
+`prisma/`…) são relativos a essa pasta.
+
+Documentos:
+- **Relatório técnico da AV3** (decisões, tabelas analíticas, política de retry, escalabilidade): [docs/RELATORIO_TECNICO.md](AVIII/docs/RELATORIO_TECNICO.md)
+- Arquitetura de base (AV2): [docs/ARQUITETURA.md](AVIII/docs/ARQUITETURA.md)
+- Diagrama de classes (PlantUML): [docs/uml/greencode-av3.puml](AVIII/docs/uml/greencode-av3.puml) · diagrama de referência: [diagrama.png](AVIII/diagrama.png)
+- Documentação interativa: `http://localhost:3000/docs` (interna) e `http://localhost:3000/api/v1/public/docs` (parceiros)
 
 ## Requisitos
 
 | | Versão |
 |---|---|
-| Sistema | Windows 10 ou superior, Ubuntu 24.04.3 ou superior, ou derivados do Ubuntu (Mint, Pop!\_OS, Zorin…) |
-| Node.js | **20.19 ou superior** (exigência do Prisma 7 e do Fastify 5). Testado com o 20.20 e o 24.18 |
-| PostgreSQL | 14 ou superior (testado com o 16), local ou via Docker |
+| Sistema | Windows 10 ou superior, Ubuntu 24.04.3 ou superior, ou derivados do Ubuntu |
+| Node.js | **20.19 ou superior** (testado com o 20.20) |
+| PostgreSQL | 14 ou superior (testado com o 16) |
+| Redis | 6.2 ou superior (testado com o 7). **Opcional** em desenvolvimento: sem ele a fila roda em memória |
 
-Não há dependências nativas (nada para compilar): o driver do PostgreSQL e o Prisma 7 são JavaScript/WebAssembly.
+Nada precisa ser compilado (a única peça nativa, um acelerador opcional do BullMQ, vem pré-compilada e tem alternativa em JavaScript). O `docker-compose.yml` sobe o PostgreSQL e o Redis.
 
 ## Instalação (Windows ou Linux)
 
-### 1. Instalar o Node.js e o PostgreSQL
-
-| Sistema | Node.js | PostgreSQL (escolha uma opção) |
-|---|---|---|
-| Windows 10/11 | `winget install OpenJS.NodeJS.LTS` | **A)** Docker Desktop · **B)** `winget install PostgreSQL.PostgreSQL.16` |
-| Ubuntu 24.04+ / derivados | `nvm install 22` ([nvm](https://github.com/nvm-sh/nvm)) ou [NodeSource](https://github.com/nodesource/distributions). O pacote `nodejs` do apt é a versão 18, antiga demais | **A)** Docker (`sudo apt install docker.io docker-compose-v2`) · **B)** `sudo apt install postgresql` |
-
-**Opção A (Docker, mais simples):** depois de clonar (passo 2), dentro da pasta `AVII`, `docker compose up -d` sobe o PostgreSQL 16 na porta 5432
-com o usuário `greencode` (senha `greencode`), que é o que o `.env` padrão usa.
-
-**Opção B (PostgreSQL instalado):** crie uma vez o usuário que o `.env` padrão usa (os bancos são criados pelo
-`npm run configurar`). Abra o `psql` (Windows: `psql -U postgres` · Ubuntu: `sudo -u postgres psql`) e execute:
-
-```sql
-CREATE USER greencode WITH PASSWORD 'greencode' CREATEDB;
-```
-
-Ou, se preferir usar outro usuário, ajuste `DATABASE_URL` e `DATABASE_URL_TESTE` no `.env` depois do passo 2.
-
-### 2. Clonar, configurar e executar
-
-Os comandos são os mesmos no Windows (PowerShell ou Prompt de Comando) e no Linux:
-
 ```bash
-git clone -b AVII https://github.com/JoaoBarreto3/programacaoorientada.git
-cd programacaoorientada/AVII
-docker compose up -d
+git clone -b AVIII https://github.com/JoaoBarreto3/programacaoorientada.git
+cd programacaoorientada/AVIII
+docker compose up -d      # PostgreSQL + Redis (ou instale os dois e ajuste o .env)
 npm install
-npm run configurar
-npm run db:seed
-npm run dev
+npm run configurar        # cria o .env, os bancos e aplica as migrações
+npm run db:seed           # opcional: dados de exemplo com 12 meses de histórico
+npm run dev               # http://localhost:3000
 ```
 
-O que cada comando faz:
-- `docker compose up -d`: sobe o PostgreSQL. **Só na opção A (Docker)**; na opção B, pule esta linha.
-- `npm install`: instala as dependências e gera o Prisma Client.
-- `npm run configurar`: cria o `.env` (com segredo JWT aleatório), os bancos e aplica as migrações.
-- `npm run db:seed`: **opcional**, carrega os dados de exemplo. Rode **antes** de abrir o site (veja abaixo).
-- `npm run dev`: compila e inicia o servidor.
+Se o `docker compose up -d` reclamar de porta em uso (já existe um PostgreSQL ou Redis instalado na máquina), defina
+`POSTGRES_PORTA=55432` e `REDIS_PORTA=56379` no `.env`, troque as portas em `DATABASE_URL`, `DATABASE_URL_TESTE`,
+`REDIS_URL` e `REDIS_URL_TESTE` para os mesmos valores e rode `docker compose up -d` de novo.
 
-Abra `http://localhost:3000`:
-- **Com o seed:** entre com `admin`, `operador`, `gestor` ou `auditor`, todos com a senha `Greencode2026`.
-- **Sem o seed:** a primeira tela é o **provisionamento inicial** (cria o primeiro administrador), como na AV1.
+Sem Docker no Windows: instale o PostgreSQL (`winget install PostgreSQL.PostgreSQL.16`) e deixe `REDIS_URL` vazio
+no `.env`. O sistema funciona com a fila em memória, adequada para uso local com uma única instância.
 
-#### Como rodar com o seed (a ordem importa)
+Com o seed, entre com `admin`, `operador`, `gestor`, `auditor`, `ana.souza` ou `bruno.lima` (senha `Greencode2026`).
+O seed também cria uma **chave de API de demonstração** para a organização BR001 e mostra o segredo no
+terminal (ele não é exibido de novo).
 
-O seed só funciona com o banco **vazio**: se já existir qualquer usuário, ele é ignorado e mostra
-`O banco já possui usuários: seed ignorado`. Por isso, siga esta ordem:
+### Produção e escala
 
-1. `npm install`
-2. `npm run configurar`
-3. `npm run db:seed`, **antes** de abrir o site e antes de criar o administrador pela tela de provisionamento
-4. `npm run dev`
-5. Abra `http://localhost:3000` e entre com `admin` / `Greencode2026`
+| Cenário | Como rodar |
+|---|---|
+| Uma instância | `npm run build` e `npm start` (com `WORKER_EMBUTIDO=true`, o servidor também processa a fila) |
+| Várias instâncias | API com `WORKER_EMBUTIDO=false` atrás de um balanceador, mais `npm run worker` em uma ou mais réplicas; todos com o mesmo `REDIS_URL` |
 
-Se você já abriu o site e criou um administrador pela tela, o seed não roda mais. Nesse caso, use
-`npm run db:resetar`: ele **apaga todos os dados**, recria o banco e já roda o seed.
-
-Rode os comandos sempre dentro da pasta `AVII` que você vai usar: o seed grava no banco indicado pelo
-`DATABASE_URL` do `.env` dessa pasta.
-
-O `npm run configurar` pode ser repetido sem problema: ele mantém o que já existe. Se algo der errado (PostgreSQL
-parado, senha errada), ele diz o que fazer. Para produção: `npm run build` e depois `npm start`. O servidor
-encerra de forma graciosa com Ctrl+C (ou SIGTERM no Linux).
-
-### Variáveis de ambiente (`.env`)
+### Variáveis de ambiente novas (veja todas em `.env.example`)
 
 | Variável | Padrão | Descrição |
 |---|---|---|
-| `DATABASE_URL` | obrigatória | conexão com o PostgreSQL |
-| `DATABASE_URL_TESTE` | (só testes) | banco **exclusivo** dos testes; tem as tabelas esvaziadas a cada execução |
-| `JWT_SEGREDO` | obrigatória | segredo de assinatura dos tokens (mínimo de 32 caracteres) |
-| `PORT` / `HOST` | `3000` / `0.0.0.0` | porta e interface do servidor |
-| `SESSAO_MINUTOS` | `30` | minutos de inatividade até a sessão expirar |
-| `LOG_NIVEL` | `info` | `fatal`, `error`, `warn`, `info`, `debug`, `trace` ou `silent` |
-| `SENHA_ITERACOES` | `600000` | iterações do PBKDF2 (os testes usam menos, para rodar rápido) |
-| `TEMPO_DESLIGAMENTO_MS` | `10000` | prazo máximo do graceful shutdown |
+| `REDIS_URL` | vazio | Redis da fila e do limite de requisições compartilhado; vazio = fila em memória |
+| `WORKER_EMBUTIDO` | `true` | o servidor também processa a fila e os agendamentos |
+| `ANALISES_CRON` / `FUSO_AGENDAMENTOS` | `0 2 * * *` / `America/Sao_Paulo` | análises recorrentes (vazio desativa) |
+| `FILA_TENTATIVAS` / `FILA_ATRASO_MS` | `3` / `5000` | retry dos relatórios: tentativas e espera inicial (dobra a cada falha) |
+| `FILA_CONCORRENCIA` | `2` | relatórios processados ao mesmo tempo por worker |
+| `RELATORIO_RETENCAO_HORAS` | `72` | por quanto tempo o arquivo fica disponível |
+| `RELATORIOS_SIMULTANEOS_POR_USUARIO` | `5` | relatórios em processamento por usuário interno |
+| `LIMITE_LOGIN_POR_MINUTO` / `LIMITE_PUBLICO_POR_IP_POR_MINUTO` | `20` / `600` | proteção por IP |
+| `TRUST_PROXY` | `false` | atrás de proxy reverso, usa o IP real do `X-Forwarded-For` |
 
 ### Scripts
 
 | Comando | O que faz |
 |---|---|
-| `npm run configurar` | cria o `.env`, os bancos e aplica as migrações (pode repetir) |
-| `npm run dev` | compila e inicia o servidor |
-| `npm run build` / `npm start` | gera o cliente e compila / inicia a versão compilada |
-| `npm run db:migrar` | aplica as migrações pendentes (não apaga dados) |
-| `npm run db:seed` | popula um banco vazio com dados de exemplo |
-| `npm run db:resetar` | **apaga tudo**, recria o banco e roda o seed (só em desenvolvimento) |
-| `npm test` | todos os testes (unidade + integração com o PostgreSQL + jornada com o servidor real) |
-| `npm run test:unidade` | só os testes de unidade (não precisam de banco) |
+| `npm run dev` / `npm start` | servidor (compila antes / versão já compilada) |
+| `npm run worker` / `npm run dev:worker` | worker separado da fila e dos agendamentos (exige Redis) |
+| `npm run configurar` | `.env`, bancos e migrações (pode repetir) |
+| `npm run db:migrar` / `db:seed` / `db:resetar` | migrações / dados de exemplo / **apaga tudo** e recria |
+| `npm test` | todos os testes (235) |
+| `npm run test:requisitos` | os 20 testes que comprovam os requisitos do enunciado da AV3, um a um (~5 s) |
 
-## API
+## Organização das APIs
 
-Todas as rotas ficam sob `/api` e respondem JSON. Fora o login e o provisionamento, todas exigem
-`Authorization: Bearer <token>`. Erros têm sempre o mesmo formato:
+| Prefixo | Para quem | Autenticação | Documentação |
+|---|---|---|---|
+| `/api/v1/internal` | front-end e equipe de gestão | `Authorization: Bearer <JWT>` | `/docs` |
+| `/api/v1/public` | parceiros externos | `X-API-Key: gc_<prefixo>_<segredo>` | `/api/v1/public/docs` |
+| `/api/saude` | monitoramento | nenhuma | — |
 
-```json
-{ "statusCode": 409, "erro": { "codigo": "CONFLITO", "mensagem": "…", "severidade": "AVISO" } }
-```
+Os caminhos da AV2 (`/api/lotes`, `/api/auth/login`…) respondem **308** para `/api/v1/internal/...`, com os
+cabeçalhos `Deprecation` e `Link`: clientes antigos continuam funcionando enquanto migram.
 
-| Status | Quando |
-|---|---|
-| 400 | dados inválidos (JSON Schema ou validação de domínio: CNPJ, datas, senha…) |
-| 401 | sem token, token inválido/expirado ou sessão encerrada |
-| 403 | o papel do usuário não permite a operação |
-| 404 | registro inexistente |
-| 409 | **versão desatualizada** (outra pessoa alterou antes) ou duplicidade detectada pelo banco |
-| 422 | regra de negócio (ex.: desmonte antes da triagem, lote fora do status permitido) |
+### Novidades da API interna
 
-**Versionamento otimista:** cada recurso traz `versao`. Para alterar, envie a versão que você leu (`versao` no
-corpo do PUT/PATCH ou `?versao=` no DELETE); se alguém tiver alterado antes, a resposta é 409.
+| Recurso | Rotas (sob `/api/v1/internal`) | Quem |
+|---|---|---|
+| Análises | `GET /analises/eficiencia` · `/analises/rentabilidade` · `/analises/rentabilidade/estimativa` · `/analises/vida-util` · `/analises/vida-util/aderencia` | admin, auditor, gestor |
+| Histórico | `POST /analises/execucoes` (admin, auditor) · `GET /analises/execucoes` · `GET /analises/execucoes/:id` · `GET /analises/execucoes/:id/previsoes` | admin, auditor, gestor |
+| Relatórios assíncronos | `POST /relatorios/tarefas` (202) · `GET /relatorios/tarefas` · `GET /relatorios/tarefas/:id` · `GET /relatorios/tarefas/:id/arquivo` · `DELETE /relatorios/tarefas/:id` (cancelar/excluir) | admin, auditor, gestor |
+| Chaves de API | `GET /chaves-api/catalogo` · `GET/POST /chaves-api` · `GET/PATCH/DELETE /chaves-api/:id` · `POST /chaves-api/:id/rotacao` | admin |
 
-### Rotas principais
+As análises aceitam `organizacaoId`, `inicio` e `fim` (período de entrada dos lotes).
 
-| Recurso | Rotas |
-|---|---|
-| Sessão | `GET/POST /provisionamento` · `POST /auth/login` · `POST /auth/renovar` · `POST /auth/logout` · `GET /auth/eu` · `PUT /auth/senha` |
-| Usuários | `GET/POST /usuarios` · `GET/PATCH/DELETE /usuarios/:login` · `PUT /usuarios/:login/senha` |
-| Organizações | `GET/POST /organizacoes` · `GET/PUT/DELETE /organizacoes/:id` · `PATCH /organizacoes/:id/situacao` |
-| Contratos | `GET/PUT/DELETE /organizacoes/:id/contrato` · `POST /organizacoes/:id/contrato/renovacao` |
-| Lotes | `GET/POST /lotes` · `GET/PUT/DELETE /lotes/:id` · `POST /lotes/:id/triagem` · `GET /lotes/:id/relatorio-triagem` · `POST /lotes/:id/equipamentos` |
-| Equipamentos | `GET/POST /equipamentos` · `GET/PUT/DELETE /equipamentos/:id` · `PATCH /equipamentos/:id/estado` · `PATCH /equipamentos/:id/status` · `GET/POST /equipamentos/:id/movimentacoes` · `GET /equipamentos/:id/rastreamento` |
-| Parâmetros | `GET /parametros` · `PUT /parametros/:grupo/:chave` · `DELETE /parametros/aliquota/:chave` |
-| Relatórios | `GET /relatorios/painel` · `/relatorios/financeiro` · `/relatorios/status/:status` · `/relatorios/organizacoes/:id` |
-| Auditoria | `GET /auditoria` · `POST /auditoria/expurgo` |
-| Sistema | `GET /saude` |
-
-### Matriz do CRUD
+### CRUD das entidades da AV3
 
 | Entidade | Cadastrar | Consultar / listar | Alterar | Excluir |
 |---|---|---|---|---|
-| Usuário | `POST /usuarios` | por login; lista com filtro de papel e situação | papel, ativo/inativo, redefinir senha | sim (exceto a própria conta e o último administrador) |
-| Organização | `POST /organizacoes` (com ou sem contrato) | por código; lista com busca, situação e paginação | dados cadastrais; CNPJ só enquanto não houver lotes; desativar/reativar | só sem lotes (com lotes: desativar) |
-| Contrato | `PUT /organizacoes/:id/contrato` | sim | substituir os termos; renovar o vencimento | sim |
-| Lote | `POST /lotes` (com ou sem equipamentos) | por código; lista por organização, situação e período | NF, transportadora, data e observações enquanto RECEBIDO; triagem | enquanto RECEBIDO (leva os equipamentos junto) |
-| Equipamento | `POST /equipamentos` ou `POST /lotes/:id/equipamentos` | por código ou código de barras; lista por lote, organização, status, tipo e estado | marca, modelo, ano e peso antes da triagem; estado físico; status; local | enquanto o lote estiver RECEBIDO (renumera as posições) |
-| Movimentação | `POST /equipamentos/:id/movimentacoes` (e automática nas mudanças de status/estado) | histórico do equipamento | — | — |
-| Parâmetros | alíquota nova via `PUT` | sim | alíquotas, depreciação, valores de referência, retenção | alíquotas |
-| Auditoria | automática em toda escrita | com filtros e paginação | — | só o expurgo do que passou do prazo de retenção |
+| Chave de API | `POST /chaves-api` (segredo mostrado uma vez) | por id ou prefixo; lista por organização e situação | nome, escopos, plano, validade, ativa/inativa; novo segredo (`/rotacao`) | `DELETE` = revogação definitiva (o registro fica para a auditoria) |
+| Execução de análise | `POST /analises/execucoes` ou pelo agendador | por id (com o resultado); lista por tipo e organização; previsões por equipamento | — | — |
+| Tarefa de relatório | `POST /relatorios/tarefas` (ou `/api/v1/public/relatorios`) | situação, lista das próprias, download do arquivo | — (o worker muda a situação) | cancelar enquanto na fila, excluir quando finalizada; 409 enquanto está sendo gerada |
 
-Os "—" são intencionais: o histórico de movimentações e a auditoria são **imutáveis** (inclusive no banco,
-por trigger), porque garantem a rastreabilidade exigida desde a AV1. Correções viram novos registros. O tipo de
-um equipamento também não muda depois de cadastrado, porque o código de barras já impresso depende dele: para
-corrigir, exclua o equipamento enquanto o lote está RECEBIDO e cadastre de novo.
+Os "—" são intencionais: uma execução de análise é um registro histórico, que serve justamente para comparar
+previsões com o que aconteceu depois (como a auditoria, não se altera nem se apaga); a situação de uma tarefa é
+decidida pelo processamento, não pelo cliente.
 
-Listagens aceitam `pagina` e `tamanhoPagina` (máximo de 100) e devolvem `{ itens, total, pagina, tamanhoPagina }`.
+### API pública v1
 
-### Exemplo (curl, no Linux ou Git Bash)
+| Escopo da chave | Rotas (sob `/api/v1/public`) |
+|---|---|
+| qualquer | `GET /eu` (parceiro, escopos, plano e limites) |
+| `RASTREABILIDADE_LER` | `GET /equipamentos/:codigo/rastreamento` |
+| `LOTES_LER` | `GET /lotes` · `GET /lotes/:id` |
+| `LOTES_ESCREVER` | `POST /lotes` (lote com equipamentos, em nome da organização da chave) |
+| `RELATORIOS_GERAR` | `GET /analises/{eficiencia,rentabilidade,vida-util}` · `POST /relatorios` (202) · `GET /relatorios` · `GET /relatorios/:id` · `GET /relatorios/:id/arquivo` · `DELETE /relatorios/:id` |
+
+| Plano | Requisições/min | Relatórios simultâneos |
+|---|---|---|
+| BASICO | 60 | 2 |
+| PROFISSIONAL | 300 | 5 |
+| CORPORATIVO | 1200 | 20 |
+
+Exemplo de integração (Linux ou Git Bash), com a chave impressa pelo seed:
 
 ```bash
-TOKEN=$(curl -s -X POST localhost:3000/api/auth/login -H 'content-type: application/json' \
-  -d '{"login":"gestor","senha":"Greencode2026"}' | node -pe 'JSON.parse(require("fs").readFileSync(0)).token')
+CHAVE='gc_xxxxxxxxxxxx_...'
+curl -s localhost:3000/api/v1/public/eu -H "x-api-key: $CHAVE"
 
-# lote + equipamentos em uma única transação
-curl -s -X POST localhost:3000/api/lotes -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' -d '{
-  "organizacaoId": "BR001", "notaFiscal": "123456", "transportadora": "TransRapida",
-  "equipamentos": [{ "tipo": "NOTEBOOK", "marca": "Dell", "modelo": "Latitude 5490",
-                     "anoFabricacao": 2019, "estadoFisico": "BOM_ESTADO", "pesoQuilogramas": 1.9 }] }'
+# relatório completo de vida útil em CSV: 202 com o id da tarefa
+ID=$(curl -s -X POST localhost:3000/api/v1/public/relatorios -H "x-api-key: $CHAVE" \
+  -H 'content-type: application/json' -d '{"tipo":"VIDA_UTIL","formato":"CSV"}' \
+  | node -pe 'JSON.parse(require("fs").readFileSync(0)).id')
+
+curl -s localhost:3000/api/v1/public/relatorios/$ID -H "x-api-key: $CHAVE"            # PENDENTE → CONCLUIDA
+curl -s localhost:3000/api/v1/public/relatorios/$ID/arquivo -H "x-api-key: $CHAVE" -o vida-util.csv
 ```
 
-### Ciclo de vida do equipamento
+Erros seguem sempre o formato `{ "statusCode", "erro": { "codigo", "mensagem", "severidade" } }`. Os códigos
+estão listados na documentação pública: VALIDACAO (400), CHAVE_API (401), PERMISSAO (403), NAO_ENCONTRADO (404),
+CONFLITO/DUPLICIDADE (409), EXPIRADO (410, arquivo de relatório vencido), REGRA_NEGOCIO (422), LIMITE_REQUISICOES (429) e INTERNO (500).
 
-```
-AGUARDANDO_TRIAGEM → EM_TRIAGEM ─(triagem do lote concluída)─┬→ AGUARDANDO_DESMONTE → EM_DESMONTE ─┬→ PECAS_REAPROVEITADAS ─┐
-                                                              ├→ PECAS_REAPROVEITADAS                 ├→ MATERIAL_RECICLAVEL  ─┼→ BAIXA_DEFINITIVA
-                                                              └→ DESCARTE_SEGURO                      └→ DESCARTE_SEGURO      ─┘
-```
+## Front-end
 
-A triagem tem duas etapas (`POST /lotes/:id/triagem` duas vezes): a primeira coloca os equipamentos em
-EM_TRIAGEM e a segunda conclui a triagem do lote, liberando o desmonte. O banco também impõe essas transições (trigger).
+Três telas novas, mostradas conforme o papel:
+
+- **Análises**: abas de eficiência (gargalo, operadores, meses, atípicos, pendências), rentabilidade (prioridade,
+  marcas, modelos, estimador), vida útil (modelos, previsões e aderência) e histórico de execuções.
+- **Relatórios em segundo plano**: solicitação, acompanhamento automático e download.
+- **Chaves de API** (administrador): criação com o segredo exibido uma vez, desativação, novo segredo e revogação.
 
 ## Testes
 
-| Comando | O que roda |
+`npm test` roda **235 testes** em 46 suítes: os 129 da AV2 (adaptados aos novos caminhos) mais os da AV3.
+`npm run test:requisitos` roda só a rastreabilidade dos requisitos do PDF (cada teste cita o trecho do enunciado que comprova).
+
+| Arquivo | O que cobre |
 |---|---|
-| `npm test` | tudo (unidade + integração + jornada + interface) |
-| `npm run test:unidade` | só os testes que não precisam de banco |
-| `npm run test:interface` | só os testes da interface no navegador |
+| `tests/requisitos/av3-requisitos.test.ts` | **um teste por requisito do enunciado da AV3** (R01–R20), com o trecho do enunciado no nome: tecnologias, endpoints e agendamento, as três análises, tabelas históricas, aderência, chaves e escopos, limite por cliente, documentação (exemplos, erros, parâmetros), prefixos, versão, fila (202, status, download), retry, relatório técnico e compatibilidade |
+| `tests/unidade/analises.test.ts` | estatística (resumo, MQO, R², Tukey) e as três análises com valores exatos, inclusive R² mínimo, taxa de armazenagem e censura na aderência |
+| `tests/unidade/api-fila.test.ts` | formato e hash das chaves, regras da `ChaveApi`, escopos → permissões, CSV (RFC 4180 e CSV injection), retry e deduplicação da fila em memória |
+| `tests/integracao/analises.test.ts` | eficiência com relógio controlado (dois operadores, tempos exatos), rentabilidade, vida útil, histórico, aderência, agendador e permissões |
+| `tests/integracao/api-publica.test.ts` | ciclo de vida das chaves, escopos, isolamento entre organizações, auditoria `api:<prefixo>`, limite por plano (429), limite de login por IP, documentação pública |
+| `tests/integracao/relatorios-assincronos.test.ts` | 202 → polling → download, isolamento, retry após falha transitória, falha definitiva, tentativas esgotadas, limite do plano, recuperação de pendentes, expurgo |
+| `tests/integracao/fila-bullmq.test.ts` | o mesmo fluxo com **BullMQ + Redis reais**, `UnrecoverableError`, agendadores no Redis, limite compartilhado entre duas instâncias, Redis fora do ar (pulado sem `REDIS_URL_TESTE`) |
+| `tests/integracao/robustez.test.ts` | varredura de **todas** as rotas documentadas (internas e públicas) com entradas ausentes, inválidas e maliciosas: nenhum erro 500, erro sempre no formato padrão, toda rota protegida exige autenticação |
+| `tests/integracao/seguranca.test.ts` | SQL injection, templates, XSS, travessia de caminho, Unicode e NoSQL em **todos** os campos de texto e filtros: gravados e devolvidos literalmente, sem atraso nem efeito no banco; caractere nulo, `__proto__`, JWT `alg: none`, corpo gigante; cabeçalhos e CSP |
+| `tests/interface/xss.test.ts` | cargas de script em todos os campos exibidos, **todas as telas** abertas no Chrome: nada executa, texto literal, nenhuma violação de CSP; a CSP bloqueia script injetado |
+| `tests/processos.test.ts` | API (`WORKER_EMBUTIDO=false`) e `npm run worker` em processos separados com Redis: o worker processa a fila e encerra com SIGTERM; sem Redis, recusa subir |
+| `tests/interface/av3-interface.test.ts` | as telas novas no Chrome headless, sobre os dados do seed: análises, relatórios (baixar e excluir), chaves (criar, desativar, reativar, novo segredo, revogar) e menus por papel |
 
-São **129 testes** em 25 suítes:
-
-| Grupo | Arquivos | O que cobre |
-|---|---|---|
-| Unidade | `tests/unidade/` | regras do domínio (transições, justificativa, triagem, depreciação, contrato, bloqueio de login), validadores (CNPJ, 90 dias, senha…), configuração, tradução de erros |
-| CRUD | `tests/integracao/crud-completo.test.ts` | cadastrar → consultar → listar → alterar → excluir de **todas** as entidades, com a auditoria de cada operação |
-| Regras e fluxos | `organizacoes`, `lotes`, `equipamentos`, `relatorios-auditoria` | regras de negócio da AV1 pela API, triagem, ciclo de vida, rastreabilidade, relatórios, retenção |
-| Segurança | `autenticacao`, `usuarios-permissoes` | JWT, expiração por inatividade, logout, bloqueio, matriz de permissões dos 4 papéis |
-| Validação | `validacao-entrada` | 29 entradas malformadas recusadas com 400, campos controlados pelo servidor, JSON malformado, limite de tamanho |
-| Concorrência e banco | `concorrencia-integridade` | versionamento otimista, requisições simultâneas, triggers e CHECK com SQL direto |
-| Casos-limite | `casos-limite` | corridas entre requisições no mesmo lote (triagem × inclusão, baixas simultâneas), paginação extrema, tokens forjados, valores fora do limite |
-| Seed | `seed` | o script de seed roda de verdade, cobre os cenários de validação e não duplica dados |
-| Documentação | `documentacao` | toda rota documentada no OpenAPI, protegida por token e com o CRUD de cada entidade |
-| Jornada | `tests/jornada.test.ts` | servidor real em outro processo: do provisionamento à rastreabilidade, com reinício e graceful shutdown |
-| Interface | `tests/interface/` | **o CRUD feito clicando no front-end**, no Google Chrome (headless); verifica o menu por papel e a ausência de erros de JavaScript |
-
-Os testes de integração usam o banco de `DATABASE_URL_TESTE`, que precisa ser diferente de `DATABASE_URL`: as
-tabelas dele são esvaziadas a cada execução. Os testes de interface usam o Google Chrome instalado; se ele não
-existir na máquina, são **pulados** (aparecem como *skipped*), sem falhar a suíte.
-
-## Estrutura
+## Estrutura (o que é novo)
 
 ```
-prisma/
-  schema.prisma          modelos, relacionamentos, índices únicos
-  migrations/            migração inicial (gerada) + regras_integridade (CHECK, triggers, sequências)
-  seed.ts                massa de dados de exemplo
-src/
-  server.ts              ponto de entrada: porta configurável, graceful shutdown
-  app.ts                 monta o Fastify (plugins, Swagger, JWT, rotas, front-end)
-  config/                leitura e validação das variáveis de ambiente
-  http/                  controllers, JSON Schemas, autenticação JWT, tratamento de erros
-  servicos/              casos de uso, autorização por papel, transações, auditoria
-  repositorios/          Prisma Client, unidade de trabalho, versionamento otimista
-  dominio/               entidades (Organizacao, Contrato, Lote, Equipamento, Movimentacao, Usuario…) e enums
-  validacao/             Validador (abstrata) e validadores concretos (reaproveitados da AV1)
-  fabricas/              criação de objetos compostos com códigos sequenciais
-  comum/                 erros, datas civis, relógio, paginação
-public/                  front-end SPA (HTML + CSS + JavaScript, sem build)
-tests/                   unidade/, integracao/, interface/ (navegador), jornada.test.ts
-docs/                    ARQUITETURA.md, uml/
+prisma/migrations/…_analitica_api_publica/   tabelas da AV3 + CHECKs + preenchimento da triagem dos lotes antigos
+prisma/seed-historico.ts                     12 meses de operação simulada (relógio controlado, semente fixa)
+src/analises/                                funções puras: estatistica, AnaliseEficiencia, AnaliseRentabilidade, AnaliseVidaUtil
+src/servicos/ServicoAnalise.ts               escopo, autorização, cálculo e gravação das análises
+src/servicos/ServicoChaveApi.ts              chaves de API (criar, alterar, rotacionar, revogar, autenticar)
+src/servicos/ServicoRelatorioAssincrono.ts   tarefas de relatório: solicitar, processar (retry), baixar, expurgar
+src/servicos/processamento.ts                agendamentos e partida do worker
+src/infra/fila/                              FilaTarefas (porta), FilaBullMQ, FilaMemoria
+src/http/controllers/ControllerPublico.ts    API pública v1
+src/http/plugins/                            autenticacaoParceiro (X-API-Key), limites (rate limit)
+src/worker.ts                                processo worker separado
 ```
 
-## Requisitos da AV2 → implementação
+## Requisitos da AV3 → implementação
 
 | Requisito | Onde |
 |---|---|
-| Arquitetura Controller → Service → Repository | `src/http/controllers`, `src/servicos`, `src/repositorios` |
-| Fastify com JSON Schema, hooks e plugins | `src/app.ts`, `src/http/schemas.ts`, `src/http/plugins/` |
-| Porta por variável de ambiente e graceful shutdown | `src/config/configuracao.ts`, `src/server.ts` |
-| `schema.prisma` com Organizacao, Contrato (0..1), Lote, Equipamento e Movimentacao | `prisma/schema.prisma` |
-| Migrações versionadas, PostgreSQL | `prisma/migrations/` |
-| JWT com `@fastify/jwt`, hash de senha, papel no token, hook que injeta o usuário | `src/http/plugins/autenticacao.ts`, `ServicoAutenticacao` |
-| Autorização pelos serviços a partir do papel | `src/servicos/autorizacao.ts` |
-| `$transaction` em operações compostas | `UnidadeDeTrabalho`, `ServicoLote`, `ServicoEquipamento` |
-| Versionamento otimista (campo `versao`) | `EntidadeVersionada`, `repositorios/versionamento.ts` |
-| Seed com dados representativos | `prisma/seed.ts` |
-| Unicidade de CNPJ e código de barras; triggers e constraints | `schema.prisma` (`@unique`), migração `regras_integridade` |
-| API documentada | `/docs` (OpenAPI gerado dos schemas) |
-| Front-end SPA consumindo a API | `public/` |
-| Justificativa de decisões, trade-offs e alternativas | `docs/ARQUITETURA.md` |
-| Windows 10+ / Ubuntu 24.04.3+ | sem dependências nativas, scripts npm em Node puro, `path` para caminhos, SIGBREAK no Windows |
+| Módulo de análises com Node, TypeScript e Prisma; biblioteca estatística | `src/analises` (simple-statistics), `ServicoAnalise`, `RepositorioAnalises` |
+| Análises por endpoints e por tarefas agendadas | `/api/v1/internal/analises/*`, agendamento `analises-recorrentes` (BullMQ job scheduler / node-cron) |
+| Eficiência: tempo médio, gargalos, variação por operador e período | `AnaliseEficiencia` |
+| Rentabilidade por tipo, com estado físico, marca e modelo | `AnaliseRentabilidade` |
+| Vida útil por mínimos quadrados, resultados em tabelas, comparação com o realizado | `AnaliseVidaUtil`, tabelas `execucoes_analise` e `previsoes_vida_util`, `/vida-util/aderencia` |
+| API pública com chaves, permissões e limite de requisições | `ControllerPublico`, `ServicoChaveApi`, `@fastify/rate-limit` |
+| Documentação interativa com exemplos e códigos de erro | `/api/v1/public/docs` (`@fastify/swagger`) |
+| Prefixos `/api/v1/public` × `/api/v1/internal`, versão na URL | `src/app.ts` |
+| Fila BullMQ + Redis, id da tarefa, status e download | `src/infra/fila`, `ServicoRelatorioAssincrono`, `src/worker.ts` |
+| Relatório técnico (biblioteca, tabelas, retry, escala) | `docs/RELATORIO_TECNICO.md` |
+| Windows 10+ / Ubuntu 24.04.3+ | sem dependências nativas, Redis opcional, SIGBREAK no worker, CSV com BOM e CRLF |
