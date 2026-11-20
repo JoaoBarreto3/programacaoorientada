@@ -95,6 +95,7 @@ function contemCaractereNulo(valor: unknown, profundidade = 0): boolean {
     return Object.entries(valor).some(([chave, v]) => chave.includes("\u0000") || contemCaractereNulo(v, profundidade + 1));
 }
 
+//Eu sou o Batman!
 // Monta a aplicação (sem abrir a porta): usada pelo server.ts e pelos testes (app.inject).
 export async function construirApp(opcoes: OpcoesApp): Promise<FastifyInstance> {
     const { config, prisma } = opcoes;
